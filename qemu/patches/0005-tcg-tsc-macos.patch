@@ -1,0 +1,41 @@
+--- a/hw/i386/x86-cpu.c
++++ b/hw/i386/x86-cpu.c
+@@ -34,6 +34,17 @@
+ /* TSC handling */
+ uint64_t cpu_get_tsc(CPUX86State *env)
+ {
++#if defined(__APPLE__) && !defined(__x86_64__)
++    /*
++     * The macOS host tick source is a nanosecond clock (include/qemu/timer.h),
++     * so a TCG guest's TSC would run at exactly 1 GHz.  Mac OS X 10.6 sets
++     * kSlow for TSCs at or below ~1 GHz and then panics building its commpage
++     * ("commpage no match").  Honor -cpu ...,tsc-frequency= by scaling.
++     */
++    if (env->tsc_khz) {
++        return muldiv64(cpus_get_elapsed_ticks(), env->tsc_khz, 1000000);
++    }
++#endif
+     return cpus_get_elapsed_ticks();
+ }
+ 
+--- a/include/qemu/timer.h	2026-10-31 00:45:13
++++ b/include/qemu/timer.h	2026-10-31 00:45:13
+@@ -966,6 +966,18 @@
+     return val;
+ }
+ 
++#elif defined(__APPLE__)
++/*
++ * macOS on Apple silicon: CLOCK_MONOTONIC (the get_clock() fallback below)
++ * only has microsecond resolution, so a TCG guest's TSC would advance in
++ * 1000-tick steps.  Mac OS X 10.6 times two context switches with it at boot
++ * (sched_startup/time_cswitch) and spins forever when the delta is 0.
++ */
++static inline int64_t cpu_get_host_ticks(void)
++{
++    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
++}
++
+ #else
+ /* The host CPU doesn't have an easily accessible cycle counter.
+    Just return a monotonically increasing value.  This will be

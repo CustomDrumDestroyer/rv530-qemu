@@ -1,0 +1,5 @@
+# target: fs-r500
+# Writes color and depth (output[4] is the depth output by default).
+const[0] {0.5, 0.0, 0.0, 1.0}
+MOV output[0], input[0];
+MOV output[4].z, const[0].x;

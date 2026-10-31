@@ -1,0 +1,58 @@
+From: CustomDrumDestroyer <350583592+CustomDrumDestroyer@users.noreply.github.com>
+Subject: [PATCH] ui/input: remember the last absolute pointer position
+
+The rv530 display device recovers the cursor hot spot (which the guest
+driver applies in software) from the pointer position it last sent.
+---
+diff -ru a/include/ui/input.h b/include/ui/input.h
+--- a/include/ui/input.h
++++ b/include/ui/input.h
+@@ -78,6 +78,13 @@
+                           int min_in, int max_in,
+                           int min_out, int max_out);
+ void qemu_input_queue_rel(QemuConsole *src, InputAxis axis, int value);
++/*
++ * Last absolute pointer position sent to the guest, in
++ * [INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX]; false before the first one.
++ * Display devices whose guest driver applies the cursor hot spot in
++ * software use it to recover the hot spot.
++ */
++bool qemu_input_get_last_abs(int *x, int *y);
+ void qemu_input_queue_abs(QemuConsole *src, InputAxis axis, int value,
+                           int min_in, int max_in);
+ void qemu_input_queue_mtt(QemuConsole *src, InputMultiTouchType type, int slot,
+diff -ru a/ui/input.c b/ui/input.c
+--- a/ui/input.c
++++ b/ui/input.c
+@@ -341,12 +341,31 @@
+     queue_count++;
+ }
+ 
++/* last absolute pointer position delivered to the guest (rv530 cursor) */
++static int last_abs[INPUT_AXIS__MAX];
++static unsigned last_abs_valid;
++
++bool qemu_input_get_last_abs(int *x, int *y)
++{
++    if ((last_abs_valid & 3) != 3) {
++        return false;
++    }
++    *x = last_abs[INPUT_AXIS_X];
++    *y = last_abs[INPUT_AXIS_Y];
++    return true;
++}
++
+ void qemu_input_event_send_impl(QemuConsole *src, QemuInputEvent *evt)
+ {
+     QemuInputHandlerState *s;
+ 
+     qemu_input_event_trace(src, evt);
+ 
++    if (evt->type == INPUT_EVENT_KIND_ABS && evt->abs.axis < INPUT_AXIS__MAX) {
++        last_abs[evt->abs.axis] = evt->abs.value;
++        last_abs_valid |= 1u << evt->abs.axis;
++    }
++
+     /* send event */
+     s = qemu_input_find_handler(1 << evt->type, src);
+     if (!s) {

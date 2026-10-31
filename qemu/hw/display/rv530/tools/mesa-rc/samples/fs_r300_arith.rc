@@ -1,0 +1,9 @@
+# target: fs-r300
+# R300 fragment program: arithmetic + one texture fetch.
+const[0] {0.5, 2.0, -1.0, 4.0}
+TEX temp[0], input[1].xy__, 2D[0];
+MUL temp[1], temp[0], input[0];
+MAD temp[2], temp[1], const[0].yyyy, const[0].xxxx;
+DP3 temp[3].w, temp[2].xyz_, const[0].zzz_;
+MOV output[0].xyz, temp[2].xyz_;
+MOV output[0].w, temp[3].w;

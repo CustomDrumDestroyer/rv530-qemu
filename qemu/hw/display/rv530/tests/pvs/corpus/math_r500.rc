@@ -1,0 +1,17 @@
+# target: vs-r500
+# Math engine: LIT / EXP / LOG and the scalar functions.
+# Execution check: ref_math.  input[1] = (nl, nh, -, power), input[2].x in
+# (0, 8), input[2].y in (-pi, pi), input[3] positive.  (Scalar sources use
+# the Mesa convention of putting the swizzle in the destination lane.)
+MOV output[0], input[0];
+LIT output[1], input[1];
+EXP output[2], input[2].x;
+LOG output[3], input[2].x;
+RCP output[4].x, input[3].x___;
+RSQ output[4].y, input[3]._y__;
+EX2 output[4].z, input[2].__x_;
+LG2 output[4].w, input[3].___z;
+SIN output[5].x, input[2].y___;
+COS output[5].y, input[2]._y__;
+POW output[5].z, input[3].__x_, input[3].__w_;
+MOV output[5].w, const[0].___x;

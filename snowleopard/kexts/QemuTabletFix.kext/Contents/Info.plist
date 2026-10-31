@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Codeless kext: IOHIDEventDriver in 10.6 trims 15% off the range of
+  absolute axes (AbsoluteAxisBoundsRemovalPercentage, 7.5% per edge), which
+  makes the guest pointer run 1/0.85 times faster than QEMU's usb-tablet
+  around the screen center and clicks land away from the host cursor.
+  Same driver, same matching as Apple's personality, higher score, no trim.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.rv530.QemuTabletFix</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>QemuTabletFix</string>
+	<key>CFBundlePackageType</key>
+	<string>KEXT</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1.0</string>
+	<key>IOKitPersonalities</key>
+	<dict>
+		<key>QEMU USB Tablet</key>
+		<dict>
+			<key>CFBundleIdentifier</key>
+			<string>com.apple.iokit.IOHIDFamily</string>
+			<key>IOClass</key>
+			<string>IOHIDEventDriver</string>
+			<key>IOProviderClass</key>
+			<string>IOHIDInterface</string>
+			<key>VendorID</key>
+			<integer>1575</integer>
+			<key>ProductID</key>
+			<integer>1</integer>
+			<key>IOProbeScore</key>
+			<integer>3000</integer>
+			<key>AbsoluteAxisBoundsRemovalPercentage</key>
+			<integer>0</integer>
+		</dict>
+	</dict>
+	<key>OSBundleRequired</key>
+	<string>Root</string>
+</dict>
+</plist>

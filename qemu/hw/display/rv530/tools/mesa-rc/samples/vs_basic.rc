@@ -1,0 +1,11 @@
+# target: vs-r300
+# Vertex program: MVP transform (4 DP4) plus color pass-through.
+const[0] {1.0, 0.0, 0.0, 0.0}
+const[1] {0.0, 1.0, 0.0, 0.0}
+const[2] {0.0, 0.0, 1.0, 0.0}
+const[3] {0.0, 0.0, 0.0, 1.0}
+DP4 output[0].x, input[0], const[0];
+DP4 output[0].y, input[0], const[1];
+DP4 output[0].z, input[0], const[2];
+DP4 output[0].w, input[0], const[3];
+MOV output[1], input[1];

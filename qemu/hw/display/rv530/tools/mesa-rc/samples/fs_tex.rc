@@ -1,0 +1,9 @@
+# target: fs-r500
+# Texture sampling: 2D, projective and cube fetches, then a modulate.
+const[0] {0.0, 1.0, 2.0, 0.0}
+TEX temp[0], input[1].xy__, 2D[0];
+TXP temp[1], input[2], 2D[1];
+TEX temp[2], input[3].xyz_, CUBE[2];
+MUL temp[3], temp[0], input[0];
+MAD temp[4], temp[1], const[0].yyyy, temp[2];
+MUL output[0], temp[3], temp[4];

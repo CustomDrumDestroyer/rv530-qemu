@@ -1,0 +1,11 @@
+--- a/hw/display/meson.build
++++ b/hw/display/meson.build
+@@ -156,3 +156,8 @@
+ else
+   system_ss.add(when: 'CONFIG_RV530', if_true: files('rv530/r5xx_vk_stub.c'))
+ endif
++# rv530 on macOS: checks the Metal devices before MoltenVK is loaded
++if host_os == 'darwin' and rv530_vulkan.found() and rv530_shaderc.found()
++  system_ss.add(when: 'CONFIG_RV530', if_true: [files('rv530/r5xx_vk_mac.m'),
++                dependency('appleframeworks', modules: ['Metal', 'Foundation'])])
++endif

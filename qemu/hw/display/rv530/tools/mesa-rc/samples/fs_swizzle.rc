@@ -1,0 +1,11 @@
+# target: fs-r500
+# Swizzles, negation, abs, half/zero/one swizzle components, scalar ops.
+const[0] {1.0, 0.5, 0.25, 8.0}
+MOV temp[0], input[0].wzyx;
+MUL temp[1].xyz, temp[0].yxz_, -const[0].xyz_;
+DP3 temp[2].w, |input[0].xyz_|, input[1].xyz_;
+RCP temp[3].x, temp[2].w;
+MAD temp[4], temp[1].xyz1, temp[3].xxxx, input[0].00H1;
+RSQ temp[5].y, input[1].wwww;
+MOV output[0].xyz, temp[4].xyzw;
+MOV output[0].w, temp[5].y;

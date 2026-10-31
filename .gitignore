@@ -1,0 +1,33 @@
+# QEMU source and build tree (scripts/setup-qemu.sh)
+build-qemu/
+# reference sources (scripts/fetch-references.sh)
+reference/
+# generated synthetic AtomBIOS ROM
+build-rom/
+# VBIOS dumps of real cards: never publish
+*.rom
+# build products
+*.o
+__pycache__/
+*.pyc
+qemu/hw/display/rv530/tests/*/build/
+qemu/hw/display/rv530/tests/pvs/pvs_test
+qemu/hw/display/rv530/tests/us/test_us
+qemu/hw/display/rv530/tests/raster/test_raster
+qemu/hw/display/rv530/tests/tex/test_tex
+qemu/hw/display/rv530/tests/vk/test_vk
+qemu/hw/display/rv530/tools/mesa-rc/build/
+qemu/hw/display/rv530/tools/mesa-rc/rc_compile
+# disk images and install media
+*.iso
+*.dmg
+*.img
+*.qcow2
+# Snow Leopard VM state: disks, boot volume, firmware builds, SMC key, logs
+snowleopard/work/
+# macOS hosts: the build-qemu symlink setup-qemu.sh leaves when the checkout
+# path has a space, clang debug bundles, RV530Agent built by agent/build-host.sh
+build-qemu
+*.dSYM/
+.DS_Store
+snowleopard/agent/RV530Agent

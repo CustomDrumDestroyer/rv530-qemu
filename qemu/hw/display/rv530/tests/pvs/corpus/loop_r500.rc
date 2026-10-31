@@ -1,0 +1,16 @@
+# target: vs-r500
+# R500 flow control: hardware loop with a predicated break.
+# counter = const[0].x; while (counter < const[1].x) { acc += input[1];
+# counter += const[1].y }  Execution check: ref_loop.
+MOV temp[0], input[0];
+MOV temp[1], const[0];
+BGNLOOP;
+SGE temp[2].x, temp[1].x, const[1].x;
+IF temp[2].x;
+BRK;
+ENDIF;
+ADD temp[0], temp[0], input[1];
+ADD temp[1].x, temp[1].x, const[1].y;
+ENDLOOP;
+MOV output[0], temp[0];
+MOV output[1], temp[1];

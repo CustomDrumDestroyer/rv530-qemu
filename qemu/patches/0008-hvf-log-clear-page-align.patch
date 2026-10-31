@@ -1,0 +1,30 @@
+--- a/accel/hvf/hvf-all.c
++++ b/accel/hvf/hvf-all.c
+@@ -162,9 +162,25 @@
+      * The dirty page bits within section are being cleared.
+      * Some number of those pages may have been dirtied and
+      * the write permission enabled.  Reset the range read-only.
++     *
++     * The section need not be page aligned (VGA clears the visible part
++     * of its framebuffer), and hv_vm_protect() takes whole host pages, as
++     * KVM's clear does: round it out, within its memory region.  Pages
++     * protected again but not cleared only fault on their next write,
++     * which marks them dirty once more.
+      */
+-    hvf_protect_clean_range(section->offset_within_address_space,
+-                            int128_get64(section->size));
++    uint64_t psize = qemu_real_host_page_size();
++    hwaddr base = section->offset_within_address_space -
++                  section->offset_within_region;
++    hwaddr start = QEMU_ALIGN_DOWN(section->offset_within_address_space, psize);
++    hwaddr end = QEMU_ALIGN_UP(section->offset_within_address_space +
++                               int128_get64(section->size), psize);
++
++    start = MAX(start, QEMU_ALIGN_UP(base, psize));
++    end = MIN(end, QEMU_ALIGN_DOWN(base + memory_region_size(section->mr), psize));
++    if (start < end) {
++        hvf_protect_clean_range(start, end - start);
++    }
+ }
+ 
+ static void hvf_region_add(MemoryListener *listener,

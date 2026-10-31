@@ -1,0 +1,7 @@
+# target: fs-r500
+# Simple arithmetic: MAD / ADD / MUL with a constant and saturation.
+const[0] {0.5, 2.0, -1.0, 4.0}
+MUL temp[0], input[0], const[0].xxxx;
+MAD temp[1], temp[0], const[0].yyyy, input[1];
+ADD_SAT temp[2], temp[1], const[0].zzzz;
+MOV output[0], temp[2];

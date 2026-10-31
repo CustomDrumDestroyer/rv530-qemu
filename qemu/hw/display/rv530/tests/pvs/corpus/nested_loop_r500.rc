@@ -1,0 +1,24 @@
+# target: vs-r500
+# Two nested hardware loops with breaks at both levels (PRED_SET_CLR /
+# PRED_SET_RESTORE path).  Execution check: ref_nested_loop.
+# i = 0; while (i < const[0].x) { j = 0; while (j < const[0].y) {
+#   acc += input[1]; j += 1 } i += 1 }
+MOV temp[0], input[0];
+MOV temp[1].x, const[1].x;
+BGNLOOP;
+  SGE temp[3].x, temp[1].x, const[0].x;
+  IF temp[3].x;
+    BRK;
+  ENDIF;
+  MOV temp[2].x, const[1].x;
+  BGNLOOP;
+    SGE temp[3].y, temp[2]._x__, const[0]._y__;
+    IF temp[3].y;
+      BRK;
+    ENDIF;
+    ADD temp[0], temp[0], input[1];
+    ADD temp[2].x, temp[2].x, const[1].y;
+  ENDLOOP;
+  ADD temp[1].x, temp[1].x, const[1].y;
+ENDLOOP;
+MOV output[0], temp[0];

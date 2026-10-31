@@ -1,0 +1,505 @@
+From: CustomDrumDestroyer <350583592+CustomDrumDestroyer@users.noreply.github.com>
+Subject: [PATCH] ui/cocoa: drag and drop, Resize Guest with Window (rv530)
+
+The Cocoa side of 0003 and 0004, for macOS hosts:
+- with RV530_DND_SEND set (snowleopard/sl-vm.sh DND=1), files dropped on
+  the window are handed to "CMD --at X,Y PATH..." with the drop point in
+  guest pixels; when the pointer leaves the window with the button held
+  while the guest drags files ("CMD --query"), a host drag starts whose
+  file URLs come from "CMD --fetch", and when it ends the guest's drag is
+  cancelled with Escape, the button released 300 ms later (the keyboard
+  and the tablet are separate USB devices);
+- for a display device with a run-time "auto-resize" property, View >
+  Resize Guest with Window switches whether the guest resolution follows
+  the window (turning Zoom To Fit on when needed); while it does, the
+  window has no aspect lock and takes the size of a new guest mode until
+  it is resized by anyone else (a mode the guest passes through would
+  otherwise become the next request);
+- for such a device a resizable window reports its size in points, not
+  pixels, so a Retina window does not ask for twice its size.
+---
+--- a/ui/cocoa.m
++++ b/ui/cocoa.m
+@@ -110,6 +110,16 @@
+ static QemuEvent cbevent;
+ static QemuCocoaPasteboardTypeOwner *cbowner;
+ 
++/*
++ * rv530 (qemu/patches/0006, the Cocoa side of 0003 and 0004): "Resize Guest
++ * with Window" for a display device with a run-time "auto-resize" property,
++ * and drag and drop of files through the RV530_DND_SEND command.
++ */
++static Object *resize_dev;          /* device with "auto-resize", or NULL */
++static NSMenuItem *resize_item;
++static NSMenuItem *zoom_item;
++static const char *dnd_cmd;         /* RV530_DND_SEND */
++
+ // Utility functions to run specified code block with the BQL held
+ typedef void (^CodeBlock)(void);
+ typedef bool (^BoolCodeBlock)(void);
+@@ -141,6 +151,26 @@
+     return val;
+ }
+ 
++/* rv530: the guest resolution follows the window (with the BQL) */
++static bool guest_follows_window(void)
++{
++    return resize_dev && object_property_get_bool(resize_dev, "auto-resize", NULL);
++}
++
++/* rv530: run "RV530_DND_SEND OPT", its standard output in *out */
++static bool dnd_run(const char *opt, char **out)
++{
++    char *argv[] = { (char *)dnd_cmd, (char *)opt, NULL };
++    gint status = -1;
++
++    if (!dnd_cmd || !g_spawn_sync(NULL, argv, NULL, G_SPAWN_SEARCH_PATH |
++                                  G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL, out,
++                                  NULL, &status, NULL)) {
++        return false;
++    }
++    return status == 0;
++}
++
+ static int cocoa_keycode_to_linux(int keycode)
+ {
+     if (qemu_input_map_osx_to_linux_len <= keycode) {
+@@ -174,7 +204,7 @@
+     QemuCocoaView
+  ------------------------------------------------------
+ */
+-@interface QemuCocoaView : NSView
++@interface QemuCocoaView : NSView <NSDraggingSource, NSPasteboardItemDataProvider>
+ {
+     QEMUScreen screen;
+     pixman_image_t *pixman_image;
+@@ -195,8 +225,21 @@
+     int mouseX;
+     int mouseY;
+     bool mouseOn;
++    /* rv530 drag out of the guest */
++    BOOL dndOutside;                /* pointer left the view in this drag */
++    NSArray *dndItems;              /* pasteboard items of the host drag */
++    NSArray *dndPaths;              /* their host copies, once fetched */
++    /* rv530 window-size following */
++    BOOL sizingWindow;              /* resizeWindow is resizing it */
++    BOOL windowSized;               /* resized by anyone else since */
+ }
+ - (void) switchSurface:(pixman_image_t *)image;
++- (void) resizeWindow;
++- (void) resizeWindowToScreen;
++- (void) windowDidResize;
++- (void) followGuestSize;
++- (void) updateUIInfoLockedDelay:(bool)delay;
++- (void) dragOutOfGuest:(NSEvent *)event;
+ - (void) grabMouse;
+ - (void) ungrabMouse;
+ - (void) setFullGrab:(id)sender;
+@@ -245,6 +288,9 @@
+ 
+         [self addTrackingArea:trackingArea];
+         [trackingArea release];
++        if (dnd_cmd) {
++            [self registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
++        }
+         screen.width = frameRect.size.width;
+         screen.height = frameRect.size.height;
+         colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+@@ -497,6 +543,31 @@
+ 
+ - (void) resizeWindow
+ {
++    /* rv530: a resize of our own is not one that stops the window following */
++    sizingWindow = YES;
++    [self resizeWindowToScreen];
++    sizingWindow = NO;
++}
++
++- (void) resizeWindowToScreen
++{
++    if (resize_dev && ([[self window] styleMask] & NSWindowStyleMaskResizable) &&
++        bool_with_bql(^{ return guest_follows_window(); })) {
++        /*
++         * rv530: the guest takes the window's size, so no aspect lock.  The
++         * window takes the size of a new guest mode (in points, like the
++         * size it asks for, updateUIInfoLocked) only until it is resized:
++         * after that a mode the guest passes through on the way to the
++         * requested one would become the next request.
++         */
++        [[self window] setContentResizeIncrements:NSMakeSize(1, 1)];
++        if (!windowSized &&
++            !([[self window] styleMask] & NSWindowStyleMaskFullScreen)) {
++            [[self window] setContentSize:NSMakeSize(screen.width, screen.height)];
++        }
++        return;
++    }
++
+     [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
+ 
+     if (!([[self window] styleMask] & NSWindowStyleMaskResizable)) {
+@@ -513,6 +584,20 @@
+     }
+ }
+ 
++- (void) windowDidResize
++{
++    if (!sizingWindow) {
++        windowSized = YES;
++    }
++}
++
++/* rv530: the window takes the guest's size, as from the start */
++- (void) followGuestSize
++{
++    windowSized = NO;
++    [self resizeWindow];
++}
++
+ - (void) updateBounds
+ {
+     [self setBoundsSize:NSMakeSize(screen.width, screen.height)];
+@@ -522,10 +607,16 @@
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+ 
+ - (void) updateUIInfoLocked
++{
++    [self updateUIInfoLockedDelay:true];
++}
++
++- (void) updateUIInfoLockedDelay:(bool)delay
+ {
+     /* Must be called with the BQL, i.e. via updateUIInfo */
+     NSSize frameSize;
+     QemuUIInfo info;
++    CGFloat scale;
+ 
+     if (!qemu_console_is_graphic(dcl.con)) {
+         return;
+@@ -561,10 +652,19 @@
+ 
+     info.xoff = 0;
+     info.yoff = 0;
+-    info.width = frameSize.width * [[self window] backingScaleFactor];
+-    info.height = frameSize.height * [[self window] backingScaleFactor];
++    /*
++     * rv530: a resizable window asks for its size in points.  In pixels a
++     * Retina window would ask for twice its size: text half as big, and
++     * past the device's largest mode.
++     */
++    scale = [[self window] backingScaleFactor];
++    if (resize_dev && ([[self window] styleMask] & NSWindowStyleMaskResizable)) {
++        scale = 1;
++    }
++    info.width = frameSize.width * scale;
++    info.height = frameSize.height * scale;
+ 
+-    qemu_console_set_ui_info(dcl.con, &info, TRUE);
++    qemu_console_set_ui_info(dcl.con, &info, delay);
+ }
+ 
+ #pragma clang diagnostic pop
+@@ -1022,8 +1122,193 @@
+ - (void) mouseDragged:(NSEvent *)event
+ {
+     [self handleMouseEvent:event];
++
++    if (dnd_cmd && isAbsoluteEnabled && isMouseGrabbed && !dndItems) {
++        NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
++        BOOL outside = !NSPointInRect(p, [self bounds]);
++
++        if (outside && !dndOutside) {
++            [self dragOutOfGuest:event];
++        }
++        dndOutside = outside;
++    }
++}
++
++/*
++ * rv530 drag and drop (qemu/patches/0006, as 0003 does for GTK): with
++ * RV530_DND_SEND set to a command (rv530's scripts/dnd/dnd-send.py), files
++ * dropped on the window are handed to "CMD --at X,Y PATH..." with the drop
++ * point in guest pixels; a guest agent delivers them there.
++ */
++- (NSDragOperation) draggingEntered:(id<NSDraggingInfo>)sender
++{
++    NSDictionary *opts = @{ NSPasteboardURLReadingFileURLsOnlyKey: @YES };
++
++    return [[sender draggingPasteboard] canReadObjectForClasses:@[[NSURL class]]
++                                                        options:opts] ?
++           NSDragOperationCopy : NSDragOperationNone;
++}
++
++- (NSDragOperation) draggingUpdated:(id<NSDraggingInfo>)sender
++{
++    return [self draggingEntered:sender];
+ }
+ 
++- (BOOL) performDragOperation:(id<NSDraggingInfo>)sender
++{
++    NSDictionary *opts = @{ NSPasteboardURLReadingFileURLsOnlyKey: @YES };
++    NSArray *urls = [[sender draggingPasteboard] readObjectsForClasses:@[[NSURL class]]
++                                                               options:opts];
++    /* the bounds are the guest surface, with the origin at the bottom left */
++    NSPoint p = [self convertPoint:[sender draggingLocation] fromView:nil];
++    int x = p.x, y = screen.height - p.y;
++    g_autoptr(GPtrArray) argv = g_ptr_array_new_with_free_func(g_free);
++    g_autoptr(GError) err = NULL;
++
++    if (![urls count] || x < 0 || y < 0 || x >= screen.width || y >= screen.height) {
++        return NO;
++    }
++    g_ptr_array_add(argv, g_strdup(dnd_cmd));
++    g_ptr_array_add(argv, g_strdup("--at"));
++    g_ptr_array_add(argv, g_strdup_printf("%d,%d", x, y));
++    for (NSURL *url in urls) {
++        g_ptr_array_add(argv, g_strdup([url fileSystemRepresentation]));
++    }
++    g_ptr_array_add(argv, NULL);
++    if (!g_spawn_async(NULL, (char **)argv->pdata, NULL, G_SPAWN_SEARCH_PATH,
++                       NULL, NULL, NULL, &err)) {
++        error_report("drag and drop: %s", err->message);
++        return NO;
++    }
++    return YES;
++}
++
++/*
++ * Dragging files out of the guest (rv530 issue #32): when the pointer
++ * leaves the view with the button held and "CMD --query" reports that the
++ * guest is dragging files (their names, one per line), start a host drag.
++ * Its file URLs come from "CMD --fetch" (host copies, one path per line)
++ * once a drop target asks for them.  When the host drag ends the guest's
++ * drag is cancelled with Escape before the button is released, so nothing
++ * is dropped inside the guest.
++ */
++- (void) dragOutOfGuest:(NSEvent *)event
++{
++    g_autofree char *names = NULL;
++    g_auto(GStrv) lines = NULL;
++    NSMutableArray *items = [NSMutableArray array];
++    NSMutableArray *pbitems = [NSMutableArray array];
++    NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
++    CGFloat size = 32 * screen.height / [self frame].size.height;
++    NSDraggingSession *session;
++    int i;
++
++    if (!dnd_run("--query", &names)) {
++        return;
++    }
++    lines = g_strsplit(names, "\n", -1);
++    for (i = 0; lines[i]; i++) {
++        NSPasteboardItem *pbitem;
++        NSDraggingItem *item;
++        NSString *name;
++
++        if (!*lines[i]) {
++            continue;
++        }
++        name = [NSString stringWithUTF8String:lines[i]];
++        pbitem = [[[NSPasteboardItem alloc] init] autorelease];
++        [pbitem setDataProvider:self forTypes:@[NSPasteboardTypeFileURL]];
++        item = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbitem] autorelease];
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++        [item setDraggingFrame:NSMakeRect(p.x - size / 2 + [items count] * size / 4,
++                                          p.y - size / 2 - [items count] * size / 4,
++                                          size, size)
++                      contents:[[NSWorkspace sharedWorkspace]
++                                   iconForFileType:[name pathExtension]]];
++#pragma clang diagnostic pop
++        [items addObject:item];
++        [pbitems addObject:pbitem];
++    }
++    if (![items count]) {
++        return;
++    }
++    dndItems = [pbitems retain];
++    [dndPaths release];
++    dndPaths = nil;
++    /* the host cursor shows the drag; it is hidden while the guest has it */
++    [self unhideCursor];
++    session = [self beginDraggingSessionWithItems:items event:event source:self];
++    [session setAnimatesToStartingPositionsOnCancelOrFail:NO];
++}
++
++- (void) pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item
++         provideDataForType:(NSPasteboardType)type
++{
++    NSUInteger i = [dndItems indexOfObjectIdenticalTo:item];
++
++    if (!dndPaths) {
++        g_autofree char *out = NULL;
++        NSMutableArray *paths = [NSMutableArray array];
++
++        if (dnd_run("--fetch", &out) && out) {
++            for (NSString *line in [[NSString stringWithUTF8String:out]
++                                       componentsSeparatedByString:@"\n"]) {
++                if ([line length]) {
++                    [paths addObject:line];
++                }
++            }
++        }
++        dndPaths = [paths retain];
++    }
++    if (i < [dndPaths count]) {
++        [item setString:[[NSURL fileURLWithPath:dndPaths[i]] absoluteString]
++                forType:NSPasteboardTypeFileURL];
++    }
++}
++
++- (NSDragOperation) draggingSession:(NSDraggingSession *)session
++    sourceOperationMaskForDraggingContext:(NSDraggingContext)context
++{
++    return context == NSDraggingContextOutsideApplication ?
++           NSDragOperationCopy : NSDragOperationNone;
++}
++
++- (void) draggingSession:(NSDraggingSession *)session
++            endedAtPoint:(NSPoint)screenPoint
++               operation:(NSDragOperation)operation
++{
++    NSPoint p = [self convertPoint:[[self window] convertPointFromScreen:screenPoint]
++                          fromView:nil];
++
++    [dndItems release];
++    dndItems = nil;
++    [dndPaths release];
++    dndPaths = nil;
++    with_bql(^{
++        qkbd_state_key_event(kbd, KEY_ESC, true);
++        qkbd_state_key_event(kbd, KEY_ESC, false);
++    });
++    [self hideCursor];
++    dndOutside = !NSPointInRect(p, [self bounds]);
++    /*
++     * The keyboard and the tablet are separate USB devices: a button
++     * released at once can reach the guest before the Escape and drop the
++     * files where the drag left the window (seen under TCG).
++     */
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
++                   dispatch_get_main_queue(), ^{
++        if (dndOutside) {
++            [self ungrabMouse];         /* releases the buttons */
++        } else {
++            with_bql(^{
++                qemu_input_queue_btn(dcl.con, INPUT_BUTTON_LEFT, false);
++                qemu_input_event_sync();
++            });
++        }
++    });
++}
++
+ - (void) rightMouseDragged:(NSEvent *)event
+ {
+     [self handleMouseEvent:event];
+@@ -1132,12 +1417,14 @@
+  ------------------------------------------------------
+ */
+ @interface QemuCocoaAppController : NSObject
+-                                       <NSWindowDelegate, NSApplicationDelegate>
++                                       <NSWindowDelegate, NSApplicationDelegate,
++                                        NSMenuDelegate>
+ {
+ }
+ - (void)doToggleFullScreen:(id)sender;
+ - (void)showQEMUDoc:(id)sender;
+ - (void)zoomToFit:(id) sender;
++- (void)resizeGuestWithWindow:(id)sender;
+ - (void)displayConsole:(id)sender;
+ - (void)pauseQEMU:(id)sender;
+ - (void)resumeQEMU:(id)sender;
+@@ -1263,6 +1550,7 @@
+ 
+ - (void)windowDidResize:(NSNotification *)notification
+ {
++    [cocoaView windowDidResize];
+     [cocoaView updateBounds];
+     [cocoaView updateUIInfo];
+ }
+@@ -1361,6 +1649,51 @@
+     [cocoaView resizeWindow];
+ }
+ 
++/*
++ * rv530 "Resize Guest with Window" (#46): for a display device with a
++ * run-time "auto-resize" property, switch whether the guest resolution
++ * follows the window.  Off, the window scales the guest image instead.
++ */
++- (void)resizeGuestWithWindow:(id)sender
++{
++    bool on = [sender state] != NSControlStateValueOn;
++    NSWindow *window = [cocoaView window];
++    bool resizable = [window styleMask] & NSWindowStyleMaskResizable;
++
++    [sender setState:on ? NSControlStateValueOn : NSControlStateValueOff];
++    with_bql(^{
++        object_property_set_bool(resize_dev, "auto-resize", on, NULL);
++    });
++    if (on && resizable) {
++        /* the guest takes the window's size as it is: just drop the aspect lock */
++        [window setContentResizeIncrements:NSMakeSize(1, 1)];
++    } else {
++        if (on) {
++            /* the window must be free to take any size */
++            [window setStyleMask:[window styleMask] | NSWindowStyleMaskResizable];
++            [zoom_item setState:NSControlStateValueOn];
++            /* the window takes the guest's size, in points */
++            [cocoaView followGuestSize];
++        } else {
++            /* the aspect lock is back */
++            [cocoaView resizeWindow];
++        }
++    }
++    if (on) {
++        /* the device applies the last size it was told: make it current */
++        with_bql(^{
++            [cocoaView updateUIInfoLockedDelay:false];
++        });
++    }
++}
++
++- (void)menuNeedsUpdate:(NSMenu *)menu
++{
++    /* qom-set may have changed it meanwhile */
++    [resize_item setState:bool_with_bql(^{ return guest_follows_window(); }) ?
++                          NSControlStateValueOn : NSControlStateValueOff];
++}
++
+ - (void)toggleZoomInterpolation:(id) sender
+ {
+     if (zoom_interpolation == kCGInterpolationNone) {
+@@ -1636,9 +1969,24 @@
+     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom To Fit" action:@selector(zoomToFit:) keyEquivalent:@""] autorelease];
+     [menuItem setState: [[cocoaView window] styleMask] & NSWindowStyleMaskResizable ? NSControlStateValueOn : NSControlStateValueOff];
+     [menu addItem: menuItem];
++    zoom_item = menuItem;
+     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom Interpolation" action:@selector(toggleZoomInterpolation:) keyEquivalent:@""] autorelease];
+     [menuItem setState: zoom_interpolation == kCGInterpolationLow ? NSControlStateValueOn : NSControlStateValueOff];
+     [menu addItem: menuItem];
++    for (int i = 0; qemu_console_lookup_by_index(i); i++) {
++        Object *dev = object_property_get_link(OBJECT(qemu_console_lookup_by_index(i)),
++                                               "device", NULL);
++        if (dev && object_property_find(dev, "auto-resize")) {
++            resize_dev = dev;
++            break;
++        }
++    }
++    if (resize_dev) {
++        resize_item = [[[NSMenuItem alloc] initWithTitle:@"Resize Guest with Window" action:@selector(resizeGuestWithWindow:) keyEquivalent:@""] autorelease];
++        [resize_item setState: guest_follows_window() ? NSControlStateValueOn : NSControlStateValueOff];
++        [menu addItem: resize_item];
++        [menu setDelegate: (id<NSMenuDelegate>)[NSApp delegate]];
++    }
+     menuItem = [[[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""] autorelease];
+     [menuItem setSubmenu:menu];
+     [[NSApp mainMenu] addItem:menuItem];
+@@ -1973,6 +2321,9 @@
+     TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+ 
+     [QemuApplication sharedApplication];
++
++    /* rv530 drag and drop (qemu/patches/0006) */
++    dnd_cmd = g_getenv("RV530_DND_SEND");
+ 
+     // Create an Application controller
+     QemuCocoaAppController *controller = [[QemuCocoaAppController alloc] init];

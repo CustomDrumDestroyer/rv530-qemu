@@ -1,0 +1,21 @@
+# target: vs-r500
+# Predicated branches: IF/ELSE/ENDIF, a nested IF, CMP (VE_COND_MUX_GTE),
+# SEQ/SNE/SGT/SLE and the R500 saturate modifier.  Execution check:
+# ref_branch.
+MOV output[0], input[0];
+MOV temp[0], const[0];
+IF input[1].x;
+  ADD temp[0], temp[0], input[2];
+  IF input[1].y;
+    MUL temp[0], temp[0], const[1];
+  ENDIF;
+ELSE;
+  SUB temp[0], temp[0], input[2];
+ENDIF;
+MOV output[1], temp[0];
+CMP output[2], input[2], input[3], const[1];
+SEQ output[3].xy, input[1], const[2];
+SNE output[3].zw, input[1], const[2];
+SGT output[4].xy, input[1], const[2];
+SLE output[4].zw, input[1], const[2];
+MOV_SAT output[5], input[3];

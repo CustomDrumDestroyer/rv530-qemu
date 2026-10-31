@@ -1,0 +1,14 @@
+# target: vs-r500
+# R500 vertex program: scalar math (RCP/RSQ/EX2/LG2/SIN/COS), MAX/MIN, SGE.
+const[0] {2.0, 0.5, 3.14159, 1.0}
+MOV output[0], input[0];
+RCP temp[0].x, input[1].wwww;
+RSQ temp[0].y, input[1].xxxx;
+EX2 temp[0].z, input[1].yyyy;
+LG2 temp[0].w, input[1].zzzz;
+SIN temp[1].x, input[2].x;
+COS temp[1].y, input[2].xxxx;
+MAX temp[2], temp[0], const[0];
+MIN temp[3], temp[1], const[0].yyyy;
+SGE temp[4], temp[2], temp[3];
+MAD output[1], temp[4], const[0].xxxx, temp[2];

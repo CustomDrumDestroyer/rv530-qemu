@@ -1,0 +1,193 @@
+From: CustomDrumDestroyer <350583592+CustomDrumDestroyer@users.noreply.github.com>
+Subject: [PATCH] ui/gtk: drag and drop files to and from the rv530 guest agent
+
+Drag and drop with the Snow Leopard guest agent, when
+RV530_DND_SEND is set (snowleopard/sl-vm.sh DND=1 sets it to
+scripts/dnd/dnd-send.py):
+- files dropped on the display are handed to "CMD --at X,Y PATH..." with
+  the drop point in guest pixels;
+- when the pointer leaves the window with the button held while the guest
+  drags files ("CMD --query"), a host drag starts; its data comes from
+  "CMD --fetch" (host copies of the files), and when it ends the guest's
+  drag is cancelled with Escape before the button is released.
+---
+--- a/ui/gtk.c
++++ b/ui/gtk.c
+@@ -1857,6 +1857,48 @@
+     return TRUE;
+ }
+ 
++/*
++ * Dragging files out of the guest: when the pointer
++ * leaves the window with the button held and "CMD --query" reports that
++ * the guest is dragging files, start a host drag.  Its data is fetched
++ * with "CMD --fetch" (the paths of host copies, one per line).  When the
++ * host drag ends the guest's drag is cancelled with Escape before the
++ * button is released, so nothing is dropped inside the guest.
++ */
++static bool gd_dnd_out;     /* a drag out of the guest is in progress */
++
++static gboolean gd_dnd_run(const char *opt, char **out)
++{
++    const char *cmd = g_getenv("RV530_DND_SEND");
++    char *argv[] = { (char *)cmd, (char *)opt, NULL };
++    gint status = -1;
++
++    if (!cmd || !g_spawn_sync(NULL, argv, NULL, G_SPAWN_SEARCH_PATH |
++                              G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL, out,
++                              NULL, &status, NULL)) {
++        return FALSE;
++    }
++    return status == 0;
++}
++
++static void gd_dnd_leave(GtkWidget *widget, GdkEventCrossing *crossing,
++                         VirtualConsole *vc)
++{
++    g_autofree char *names = NULL;
++    GtkTargetList *tl;
++
++    if (!(crossing->state & GDK_BUTTON1_MASK) || gd_dnd_out ||
++        !gd_dnd_run("--query", &names)) {
++        return;
++    }
++    tl = gtk_target_list_new(NULL, 0);
++    gtk_target_list_add_uri_targets(tl, 0);
++    gd_dnd_out = true;
++    gtk_drag_begin_with_coordinates(widget, tl, GDK_ACTION_COPY, 1,
++                                    (GdkEvent *)crossing, -1, -1);
++    gtk_target_list_unref(tl);
++}
++
+ static gboolean gd_leave_event(GtkWidget *widget, GdkEventCrossing *crossing,
+                                gpointer opaque)
+ {
+@@ -1866,6 +1908,9 @@
+     if (gd_grab_on_hover(s)) {
+         gd_ungrab_keyboard(s);
+     }
++    if (g_getenv("RV530_DND_SEND")) {
++        gd_dnd_leave(widget, crossing, vc);
++    }
+     return TRUE;
+ }
+ 
+@@ -2193,6 +2238,100 @@
+ }
+ #endif /* CONFIG_VTE */
+ 
++/*
++ * Drag and drop from the host: with RV530_DND_SEND set to a command
++ * (rv530's scripts/dnd/dnd-send.py), files dropped on the window are
++ * handed to it with the guest pixel position, "CMD --at X,Y PATH...";
++ * a guest agent delivers them there.
++ */
++static void gd_drag_data_received(GtkWidget *widget, GdkDragContext *ctx,
++                                  gint x, gint y, GtkSelectionData *data,
++                                  guint info, guint time, gpointer opaque)
++{
++    VirtualConsole *vc = opaque;
++    const char *cmd = g_getenv("RV530_DND_SEND");
++    g_auto(GStrv) uris = gtk_selection_data_get_uris(data);
++    g_autoptr(GPtrArray) argv = g_ptr_array_new_with_free_func(g_free);
++    g_autoptr(GError) err = NULL;
++    int wx_offset = 0, wy_offset = 0, ww_surface, wh_surface, fbx, fby, i;
++    gboolean ok = FALSE;
++
++    if (!cmd || !uris || !vc->gfx.ds) {
++        goto out;
++    }
++    ww_surface = surface_width(vc->gfx.ds) * vc->gfx.scale_x;
++    wh_surface = surface_height(vc->gfx.ds) * vc->gfx.scale_y;
++    if (gtk_widget_get_allocated_width(widget) > ww_surface) {
++        wx_offset = (gtk_widget_get_allocated_width(widget) - ww_surface) / 2;
++    }
++    if (gtk_widget_get_allocated_height(widget) > wh_surface) {
++        wy_offset = (gtk_widget_get_allocated_height(widget) - wh_surface) / 2;
++    }
++    fbx = (x - wx_offset) / vc->gfx.scale_x;
++    fby = (y - wy_offset) / vc->gfx.scale_y;
++    if (fbx < 0 || fby < 0 || fbx >= surface_width(vc->gfx.ds) ||
++        fby >= surface_height(vc->gfx.ds)) {
++        goto out;
++    }
++    g_ptr_array_add(argv, g_strdup(cmd));
++    g_ptr_array_add(argv, g_strdup("--at"));
++    g_ptr_array_add(argv, g_strdup_printf("%d,%d", fbx, fby));
++    for (i = 0; uris[i]; i++) {
++        char *path = g_filename_from_uri(uris[i], NULL, NULL);
++        if (path) {
++            g_ptr_array_add(argv, path);
++        }
++    }
++    if (argv->len == 3) {
++        goto out;
++    }
++    g_ptr_array_add(argv, NULL);
++    ok = g_spawn_async(NULL, (char **)argv->pdata, NULL, G_SPAWN_SEARCH_PATH,
++                       NULL, NULL, NULL, &err);
++    if (!ok) {
++        error_report("drag and drop: %s", err->message);
++    }
++out:
++    gtk_drag_finish(ctx, ok, FALSE, time);
++}
++
++static void gd_drag_data_get(GtkWidget *widget, GdkDragContext *ctx,
++                             GtkSelectionData *data, guint info, guint time,
++                             gpointer opaque)
++{
++    g_autofree char *out = NULL;
++    g_auto(GStrv) paths = NULL;
++    g_autoptr(GPtrArray) uris = g_ptr_array_new_with_free_func(g_free);
++    int i;
++
++    if (!gd_dnd_run("--fetch", &out)) {
++        return;
++    }
++    paths = g_strsplit(out, "\n", -1);
++    for (i = 0; paths[i]; i++) {
++        if (*paths[i]) {
++            g_ptr_array_add(uris, g_filename_to_uri(paths[i], NULL, NULL));
++        }
++    }
++    g_ptr_array_add(uris, NULL);
++    gtk_selection_data_set_uris(data, (char **)uris->pdata);
++}
++
++static void gd_drag_end(GtkWidget *widget, GdkDragContext *ctx, gpointer opaque)
++{
++    VirtualConsole *vc = opaque;
++    QemuConsole *con = vc->gfx.dcl.con;
++
++    if (!gd_dnd_out) {
++        return;
++    }
++    gd_dnd_out = false;
++    qkbd_state_key_event(vc->gfx.kbd, KEY_ESC, true);
++    qkbd_state_key_event(vc->gfx.kbd, KEY_ESC, false);
++    qemu_input_queue_btn(con, INPUT_BUTTON_LEFT, false);
++    qemu_input_event_sync();
++}
++
+ /** Window Creation **/
+ 
+ static void gd_connect_vc_gfx_signals(VirtualConsole *vc)
+@@ -2236,6 +2375,17 @@
+                          G_CALLBACK(gd_configure), vc);
+         g_signal_connect(vc->gfx.drawing_area, "grab-broken-event",
+                          G_CALLBACK(gd_grab_broken_event), vc);
++        if (g_getenv("RV530_DND_SEND")) {
++            gtk_drag_dest_set(vc->gfx.drawing_area, GTK_DEST_DEFAULT_ALL,
++                              NULL, 0, GDK_ACTION_COPY);
++            gtk_drag_dest_add_uri_targets(vc->gfx.drawing_area);
++            g_signal_connect(vc->gfx.drawing_area, "drag-data-received",
++                             G_CALLBACK(gd_drag_data_received), vc);
++            g_signal_connect(vc->gfx.drawing_area, "drag-data-get",
++                             G_CALLBACK(gd_drag_data_get), vc);
++            g_signal_connect(vc->gfx.drawing_area, "drag-end",
++                             G_CALLBACK(gd_drag_end), vc);
++        }
+     } else {
+         g_signal_connect(vc->gfx.drawing_area, "key-press-event",
+                          G_CALLBACK(gd_text_key_down), vc);

@@ -1,0 +1,8 @@
+# target: vs-r500
+# MAD with three distinct temporaries uses the 2-clock macro op.
+# Execution check: ref_mad_macro.
+MOV temp[0], input[0];
+MOV temp[1], input[1];
+MOV temp[2], input[2];
+MAD output[0], temp[0], temp[1], temp[2];
+MAD output[1], temp[0].wzyx, -temp[1], |temp[2]|;

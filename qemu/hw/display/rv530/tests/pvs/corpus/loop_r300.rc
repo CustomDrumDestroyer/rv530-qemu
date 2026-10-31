@@ -1,0 +1,10 @@
+# target: vs-r300
+# The same loop for the R3xx register layout (R300_VAP_PVS_FLOW_CNTL_ADDRS).
+# NOTE: R3xx has no predication, so Mesa cannot lower IF/BRK here; the loop
+# runs for the hardware count (0xff) unconditionally.  Execution check:
+# ref_loop_r300.
+MOV temp[0], input[0];
+BGNLOOP;
+ADD temp[0], temp[0], input[1];
+ENDLOOP;
+MOV output[0], temp[0];

@@ -1,0 +1,83 @@
+From: CustomDrumDestroyer <350583592+CustomDrumDestroyer@users.noreply.github.com>
+Subject: [PATCH] ui/gtk: "Resize Guest with Window" toggle in the View menu
+
+For a display device with a run-time "auto-resize" property (the rv530),
+a check item in the View menu switches whether the guest
+resolution follows the window.  The item appears only for such a device,
+reflects qom-set changes when the menu opens, turns Zoom To Fit on when
+needed (the window must be free to take any size) and re-sends the
+window's current size so the guest switches to it at once.
+
+--- a/ui/gtk.c
++++ b/ui/gtk.c
+@@ -1682,6 +1682,45 @@
+     gd_update_windowsize(vc);
+ }
+ 
++/*
++ * "Resize Guest with Window": for a display device with a run-time
++ * "auto-resize" property (the rv530), switch whether the guest resolution
++ * follows the window.  Off, the window scales the guest image instead.
++ */
++static Object *gd_resize_dev;
++static GtkWidget *gd_resize_item;
++static gulong gd_resize_handler;
++
++static void gd_menu_auto_resize(GtkMenuItem *item, void *opaque)
++{
++    GtkDisplayState *s = opaque;
++    bool on = gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item));
++
++    if (on && !gtk_check_menu_item_get_active(
++                    GTK_CHECK_MENU_ITEM(s->zoom_fit_item))) {
++        /* the window must be free to take any size */
++        gtk_menu_item_activate(GTK_MENU_ITEM(s->zoom_fit_item));
++    }
++    object_property_set_bool(gd_resize_dev, "auto-resize", on, NULL);
++    if (on) {
++        /* the device applies the last size it was told: make it current */
++        VirtualConsole *vc = gd_vc_find_current(s);
++        if (vc && vc->type == GD_VC_GFX) {
++            gd_set_ui_size(vc, gtk_widget_get_allocated_width(vc->gfx.drawing_area),
++                           gtk_widget_get_allocated_height(vc->gfx.drawing_area));
++        }
++    }
++}
++
++static void gd_view_menu_show(GtkWidget *menu, void *opaque)
++{
++    /* qom-set may have changed it meanwhile */
++    g_signal_handler_block(gd_resize_item, gd_resize_handler);
++    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(gd_resize_item),
++        object_property_get_bool(gd_resize_dev, "auto-resize", NULL));
++    g_signal_handler_unblock(gd_resize_item, gd_resize_handler);
++}
++
+ static void gd_menu_zoom_fit(GtkMenuItem *item, void *opaque)
+ {
+     GtkDisplayState *s = opaque;
+@@ -2690,6 +2729,24 @@
+     s->zoom_fit_item = gtk_check_menu_item_new_with_mnemonic(_("Zoom To _Fit"));
+     gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), s->zoom_fit_item);
+ 
++    for (vc = 0; (con = qemu_console_lookup_by_index(vc)); vc++) {
++        Object *dev = object_property_get_link(OBJECT(con), "device", NULL);
++        if (dev && object_property_find(dev, "auto-resize")) {
++            gd_resize_dev = dev;
++            break;
++        }
++    }
++    if (gd_resize_dev) {
++        gd_resize_item = gtk_check_menu_item_new_with_mnemonic(
++                             _("_Resize Guest with Window"));
++        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(gd_resize_item),
++            object_property_get_bool(gd_resize_dev, "auto-resize", NULL));
++        gd_resize_handler = g_signal_connect(gd_resize_item, "activate",
++                                             G_CALLBACK(gd_menu_auto_resize), s);
++        g_signal_connect(view_menu, "show", G_CALLBACK(gd_view_menu_show), s);
++        gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), gd_resize_item);
++    }
++
+     separator = gtk_separator_menu_item_new();
+     gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), separator);
+ 

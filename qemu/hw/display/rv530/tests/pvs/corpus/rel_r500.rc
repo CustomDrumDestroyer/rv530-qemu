@@ -1,0 +1,10 @@
+# target: vs-r500
+# Relative constant addressing through the address register (ARL).
+# Execution check: ref_rel.  input[1].x selects the matrix row block.
+ARL addr[0].x, input[1].x;
+DP4 output[0].x, input[0], const[2 + addr[0]];
+DP4 output[0].y, input[0], const[3 + addr[0]];
+DP4 output[0].z, input[0], const[4 + addr[0]];
+DP4 output[0].w, input[0], const[5 + addr[0]];
+MOV output[1], const[1 + addr[0]];
+MOV output[2], const[0];

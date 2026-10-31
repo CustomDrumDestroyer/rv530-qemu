@@ -1,0 +1,62 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# rv530.c
+rv530_mmio_read(unsigned size, uint64_t addr, const char *name, uint64_t val) "%u 0x%"PRIx64" %s -> 0x%"PRIx64
+rv530_mmio_write(unsigned size, uint64_t addr, const char *name, uint64_t val) "%u 0x%"PRIx64" %s <- 0x%"PRIx64
+rv530_pll_read(uint32_t idx, uint32_t val) "PLL[0x%02x] -> 0x%08x"
+rv530_pll_write(uint32_t idx, uint32_t val) "PLL[0x%02x] <- 0x%08x"
+rv530_mmio_wait(uint32_t off, bool write, int64_t us) "0x%04x write %d waited %" PRId64 " us for the CP"
+rv530_poll_loop(uint32_t off, uint32_t val, uint32_t count) "reg 0x%04x value 0x%08x read %u times"
+rv530_scratch_wb(uint32_t n, uint32_t val, uint32_t addr) "SCRATCH%u = 0x%08x written back to 0x%08x"
+rv530_scratch_write(uint32_t n, uint32_t val) "SCRATCH_REG%u = 0x%08x"
+
+# r5xx_mc.c
+rv530_mc_read(uint32_t idx, const char *name, uint32_t val) "MC[0x%02x] %s -> 0x%08x"
+rv530_mc_write(uint32_t idx, const char *name, uint32_t val) "MC[0x%02x] %s <- 0x%08x"
+rv530_mc_fb_location(uint32_t start, uint32_t end) "fb 0x%08x-0x%08x"
+rv530_pcie_read(uint32_t idx, const char *name, uint32_t val) "PCIE[0x%02x] %s -> 0x%08x"
+rv530_pcie_write(uint32_t idx, const char *name, uint32_t val) "PCIE[0x%02x] %s <- 0x%08x"
+rv530_gart_update(bool en, uint32_t start, uint32_t end, uint32_t base) "en %d 0x%08x-0x%08x table 0x%08x"
+rv530_gart_map(uint32_t gpu, uint64_t phys) "gpu 0x%08x -> phys 0x%"PRIx64
+rv530_gpu_fault(uint32_t addr, uint32_t len, bool write) "addr 0x%08x len %u write %d"
+
+# r5xx_cp.c
+rv530_pm4_type0(uint32_t reg, const char *name, uint32_t count, bool one_reg) "reg 0x%04x %s count %u one_reg %d"
+rv530_pm4_type3(uint32_t op, const char *name, uint32_t count) "op 0x%02x %s count %u"
+rv530_cp_ib(uint32_t addr, uint32_t ndw) "IB addr 0x%08x %u dwords"
+rv530_cp_ring_cntl(uint32_t val, uint32_t dwords) "CP_RB_CNTL 0x%08x ring %u dwords"
+rv530_cp_wptr(uint32_t wptr, uint32_t rptr) "wptr %u rptr %u"
+rv530_cp_microcode(uint32_t words, uint32_t hash) "%u words hash 0x%08x"
+
+# r5xx_avivo.c
+rv530_scanout_mode(int crtc, uint32_t w, uint32_t h, uint32_t bpp, uint32_t pitch, uint32_t addr, bool tiled, bool zc) "crtc %d %ux%u bpp %u pitch %u addr 0x%08x tiled %d zero_copy %d"
+rv530_avivo_write(uint32_t off, const char *name, uint32_t val) "0x%04x %s <- 0x%08x"
+
+# r5xx_atom.c
+rv530_atom_call(uint32_t table, uint32_t ndw, uint32_t p0, uint32_t p1, uint32_t p2) "table %u, %u dwords: 0x%08x 0x%08x 0x%08x"
+rv530_clip(const char *dir, size_t len) "clipboard %s %zu bytes"
+rv530_request_mode(uint32_t w, uint32_t h) "monitor swap to %ux%u"
+rv530_ui_info(uint32_t head, uint32_t w, uint32_t h, bool resize) "head %u window %ux%u auto-resize %d"
+rv530_atom_timing(uint32_t crtc, uint32_t w, uint32_t h, uint32_t htotal, uint32_t vtotal) "CRTC%u %ux%u total %ux%u"
+
+# r5xx_2d.c
+rv530_2d(uint32_t gmc, uint32_t dst, uint32_t pitch, int x, int y, uint32_t w, uint32_t h, uint32_t src, int sx, int sy) "gmc 0x%08x dst 0x%08x pitch %u %d,%d %ux%u src 0x%08x %d,%d"
+
+rv530_2d_reg(uint32_t off, uint32_t val) "0x%04x <- 0x%08x"
+rv530_2d_state(uint32_t rop, uint32_t fg, uint32_t wmask, uint32_t dp_cntl) "rop 0x%02x brush 0x%08x wmask 0x%08x dp_cntl 0x%x"
+
+# r5xx_3d.c
+rv530_draw_state(uint32_t n, uint32_t cb, uint32_t pitch, uint32_t vte, int x, int y, uint32_t pin, uint32_t pout) "n %u cb 0x%08x pitch 0x%08x vte 0x%x v0 %d,%d px in %u out %u"
+rv530_draw_tex(uint32_t txen, uint32_t tx0, uint32_t fmt0, uint32_t usrange, int z, int w) "tx_en 0x%x tx0 0x%08x fmt0 0x%08x us 0x%x z*1000 %d w*1000 %d"
+rv530_dbg(const char *msg) "%s"
+rv530_vk_fallback(const char *why) "%s"
+rv530_vk_verify(uint64_t draw, uint64_t prog, uint32_t bad, uint32_t maxd, uint32_t bytes) "draw %" PRIu64 " prog 0x%016" PRIx64 ": %u bytes differ from the CPU path by more than 2 (largest difference %u, %u bytes compared)"
+rv530_vk_verify_byte(uint64_t off, uint8_t gpu, uint8_t cpu) "VRAM 0x%08" PRIx64 ": GPU 0x%02x, CPU 0x%02x"
+rv530_vk_stats(uint64_t draws, uint64_t batches, uint64_t pipes, uint64_t fallbacks, uint64_t verified, uint64_t bad, uint64_t skipped) "draws %" PRIu64 " batches %" PRIu64 " pipelines %" PRIu64 " cpu-fallbacks %" PRIu64 " verified %" PRIu64 " mismatching %" PRIu64 " skipped (verify budget) %" PRIu64
+rv530_dump(const char *file) "%s"
+rv530_draw(uint32_t op, uint32_t vf_cntl, uint32_t nverts) "op 0x%02x VAP_VF_CNTL 0x%08x verts %u"
+rv530_cursor(int crtc, bool en, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t addr) "crtc %d en %d pos %u,%u size %ux%u surface 0x%08x"
+rv530_irq(int level, uint32_t cntl, int sw) "level %d GEN_INT_CNTL 0x%08x sw %d"
+rv530_draw_aa(uint32_t aa, uint32_t mspos0, uint32_t mspos1, uint32_t rctl, uint32_t roff, uint32_t rpitch, uint32_t cb, uint32_t cbpitch, uint32_t n, uint32_t prim) "GB_AA_CONFIG 0x%x MSPOS 0x%08x 0x%08x resolve ctl 0x%x off 0x%08x pitch 0x%x | cb 0x%08x pitch 0x%08x n %u prim %u"
+rv530_stall(const char *what, const char *reg, uint32_t ms) "%s %s held the BQL for %u ms"
+rv530_cursor_hot(int crtc, int hx, int hy, int x, int y, int ax, int ay, int w, int n) "crtc %d hot spot %d,%d pointer %d,%d abs %d,%d width %d n %d"

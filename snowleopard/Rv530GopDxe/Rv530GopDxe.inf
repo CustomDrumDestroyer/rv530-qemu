@@ -1,0 +1,38 @@
+## @file
+#  Minimal Graphics Output Protocol driver for the emulated ATI Radeon X1600
+#  (rv530 QEMU device).  The device resets "posted": AVIVO D1 scans out a
+#  linear ARGB8888 surface at VRAM offset 0 (BAR0) with the resolution set
+#  by the device's xres/yres properties.  This driver publishes that surface
+#  as a single-mode GOP so firmware, OpenCore and Mac OS X boot.efi can draw.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = Rv530GopDxe
+  FILE_GUID      = 6e2a5f1c-3b47-4c0e-9d8a-5307a1c71530
+  MODULE_TYPE    = UEFI_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = Rv530GopEntry
+
+[Sources]
+  Rv530GopDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DevicePathLib
+  DebugLib
+  FrameBufferBltLib
+
+[Protocols]
+  gEfiPciIoProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiDevicePathProtocolGuid

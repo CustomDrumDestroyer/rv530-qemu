@@ -1,0 +1,229 @@
+# rc_compile: corpus/loop_r500.rc, target r500-vs
+=== INPUT ===
+# inputs_read 00000003 outputs_written 00000003 shadow_samplers 00000000
+# Radeon Compiler Program
+  0: MOV temp[0], input[0];
+  1: MOV temp[1], const[0];
+  2: BGNLOOP;
+  3:   SGE temp[2].x, temp[1].x___, const[1].x___;
+  4:   IF temp[2].x___;
+  5:     BRK;
+  6:   ENDIF;
+  7:   ADD temp[0], temp[0], input[1];
+  8:   ADD temp[1].x, temp[1].x___, const[1].y___;
+  9: ENDLOOP;
+ 10: MOV output[0], temp[0];
+ 11: MOV output[1], temp[1];
+=== COMPILE ===
+stats: VS shader: 13 inst, 0 vinst, 0 sinst, 3 predicate, 2 flowcontrol,1 loops, 0 tex, 0 presub, 0 omod, 4 temps, 2 consts, 0 lits, 13 cycles
+=== CODE ===
+# target r500-vs, 13 instructions (52 dwords), num_temporaries 4
+# inst N: op src0 src1 src2
+inst 0: 00f00003 00d10001 01248001 01248001
+inst 1: 00f02003 00d10002 01248002 01248002
+inst 2: 00806055 01248000 01248000 01248000
+inst 3: 00000000 00000000 00000000 00000000
+inst 4: 0c104009 01ff0020 01ff0022 01248022
+inst 5: 00806012 00ffe060 003fe040 01248040
+inst 6: 0c806046 01248000 01248000 01248000
+inst 7: 0080605b 00db6060 01248060 01248060
+inst 8: 0cf00003 00d10000 00d10021 01248021
+inst 9: 0c102003 01ff0020 01ff2022 01248022
+inst 10: 00000000 00000000 00000000 00000000
+inst 11: 00f00203 00d10000 01248000 01248000
+inst 12: 00f02203 00d10020 01248020 01248020
+# flow control: num_fc_ops 1 fc_ops 00000002
+fc 0: lw 00800003 uw 00040009 loop_index 00000100
+# inputs_read 00000003 outputs_written 00000003
+# input[i] -> hw input i, output[i] -> hw output i (set_vertex_inputs_outputs)
+=== CONSTANTS ===
+# count 0
+# const N: x y z w | hex32 x y z w | type
+=== REGS ===
+# as programmed by r300_emit.c r300_emit_vs_state() / r300_emit_vs_constants()
+R300_VAP_PVS_CODE_CNTL_0           0x22d0 = 0x00c02c00
+R300_VAP_PVS_CODE_CNTL_1           0x22d8 = 0x0000000a
+#   last_pos_write 11 last_input_read 10 pos_end 0
+R300_VAP_PVS_VECTOR_INDX_REG (code) 0x2200 = 0x00000000
+#   followed by 52 dwords written to R300_VAP_PVS_UPLOAD_DATA (0x2208)
+R300_VAP_PVS_CONST_CNTL            0x22d4 = 0x00000000
+R300_VAP_PVS_VECTOR_INDX_REG (consts) 0x2200 = 0x00000400
+#   followed by 4 float dwords per constant to R300_VAP_PVS_UPLOAD_DATA
+R300_VAP_PVS_FLOW_CNTL_OPC         0x22dc = 0x00000002
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_0  0x2500 = 0x00800003
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_0  0x2504 = 0x00040009
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_1  0x2508 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_1  0x250c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_2  0x2510 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_2  0x2514 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_3  0x2518 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_3  0x251c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_4  0x2520 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_4  0x2524 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_5  0x2528 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_5  0x252c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_6  0x2530 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_6  0x2534 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_7  0x2538 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_7  0x253c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_8  0x2540 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_8  0x2544 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_9  0x2548 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_9  0x254c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_10 0x2550 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_10 0x2554 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_11 0x2558 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_11 0x255c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_12 0x2560 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_12 0x2564 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_13 0x2568 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_13 0x256c = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_14 0x2570 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_14 0x2574 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_LW_15 0x2578 = 0x00000000
+R500_VAP_PVS_FLOW_CNTL_ADDRS_UW_15 0x257c = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_0 0x2290 = 0x00000100
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_1 0x2294 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_2 0x2298 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_3 0x229c = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_4 0x22a0 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_5 0x22a4 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_6 0x22a8 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_7 0x22ac = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_8 0x22b0 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_9 0x22b4 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_10 0x22b8 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_11 0x22bc = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_12 0x22c0 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_13 0x22c4 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_14 0x22c8 = 0x00000000
+R300_VAP_PVS_FLOW_CNTL_LOOP_INDEX_15 0x22cc = 0x00000000
+# R300_VAP_CNTL (0x2080): PVS_NUM_SLOTS 10 PVS_NUM_CNTLRS 5 (NUM_FPUS / VF_MAX_VTX_NUM / clip bits depend on the chip and state)
+=== MESA DUMP ===
+Final vertex program code:
+0: op: 0x00f00003 dst: 0t op:                    VE_ADD
+ src0: 0x00d10001 reg: 0i swiz:  X/ Y/ Z/ W
+ src1: 0x01248001 reg: 0i swiz:  0/ 0/ 0/ 0
+ src2: 0x01248001 reg: 0i swiz:  0/ 0/ 0/ 0
+1: op: 0x00f02003 dst: 1t op:                    VE_ADD
+ src0: 0x00d10002 reg: 0c swiz:  X/ Y/ Z/ W
+ src1: 0x01248002 reg: 0c swiz:  0/ 0/ 0/ 0
+ src2: 0x01248002 reg: 0c swiz:  0/ 0/ 0/ 0
+2: op: 0x00806055 dst: 3t op:            ME_PRED_SET_EQ
+ src0: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+ src1: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+ src2: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+3: op: 0x00000000 dst: 0t op:                  VE_NO_OP
+ src0: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+ src1: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+ src2: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+4: op: 0x0c104009 dst: 2t op: PRED 1VE_SET_GREATER_THAN_EQUAL
+ src0: 0x01ff0020 reg: 1t swiz:  X/ U/ U/ U
+ src1: 0x01ff0022 reg: 1c swiz:  X/ U/ U/ U
+ src2: 0x01248022 reg: 1c swiz:  0/ 0/ 0/ 0
+5: op: 0x00806012 dst: 3t op:      VE_PRED_SET_NEQ_PUSH
+ src0: 0x00ffe060 reg: 3t swiz:  U/ U/ U/ W
+ src1: 0x003fe040 reg: 2t swiz:  U/ U/ U/ X
+ src2: 0x01248040 reg: 2t swiz:  0/ 0/ 0/ 0
+6: op: 0x0c806046 dst: 3t op: PRED 1              ME_RECIP_DX
+ src0: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+ src1: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+ src2: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+7: op: 0x0080605b dst: 3t op:           ME_PRED_SET_POP
+ src0: 0x00db6060 reg: 3t swiz:  W/ W/ W/ W
+ src1: 0x01248060 reg: 3t swiz:  0/ 0/ 0/ 0
+ src2: 0x01248060 reg: 3t swiz:  0/ 0/ 0/ 0
+8: op: 0x0cf00003 dst: 0t op: PRED 1                   VE_ADD
+ src0: 0x00d10000 reg: 0t swiz:  X/ Y/ Z/ W
+ src1: 0x00d10021 reg: 1i swiz:  X/ Y/ Z/ W
+ src2: 0x01248021 reg: 1i swiz:  0/ 0/ 0/ 0
+9: op: 0x0c102003 dst: 1t op: PRED 1                   VE_ADD
+ src0: 0x01ff0020 reg: 1t swiz:  X/ U/ U/ U
+ src1: 0x01ff2022 reg: 1c swiz:  Y/ U/ U/ U
+ src2: 0x01248022 reg: 1c swiz:  0/ 0/ 0/ 0
+10: op: 0x00000000 dst: 0t op:                  VE_NO_OP
+ src0: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+ src1: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+ src2: 0x00000000 reg: 0t swiz:  X/ X/ X/ X
+11: op: 0x00f00203 dst: 0o op:                    VE_ADD
+ src0: 0x00d10000 reg: 0t swiz:  X/ Y/ Z/ W
+ src1: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+ src2: 0x01248000 reg: 0t swiz:  0/ 0/ 0/ 0
+12: op: 0x00f02203 dst: 1o op:                    VE_ADD
+ src0: 0x00d10020 reg: 1t swiz:  X/ Y/ Z/ W
+ src1: 0x01248020 reg: 1t swiz:  0/ 0/ 0/ 0
+ src2: 0x01248020 reg: 1t swiz:  0/ 0/ 0/ 0
+Flow Control Ops: 0x00000002
+LOOP: uw-> 0x00040009 lw-> 0x00800003 loop data->0x00000100
+Before = 3 First = 4 Last = 9
+=== HEX ===
+# code: 52 dwords, 4 per instruction, upload order
+00f00003
+00d10001
+01248001
+01248001
+00f02003
+00d10002
+01248002
+01248002
+00806055
+01248000
+01248000
+01248000
+00000000
+00000000
+00000000
+00000000
+0c104009
+01ff0020
+01ff0022
+01248022
+00806012
+00ffe060
+003fe040
+01248040
+0c806046
+01248000
+01248000
+01248000
+0080605b
+00db6060
+01248060
+01248060
+0cf00003
+00d10000
+00d10021
+01248021
+0c102003
+01ff0020
+01ff2022
+01248022
+00000000
+00000000
+00000000
+00000000
+00f00203
+00d10000
+01248000
+01248000
+00f02203
+00d10020
+01248020
+01248020
+=== FINAL PROGRAM ===
+# rc_print_program() of the compiler's final (paired/scheduled) IR
+# Radeon Compiler Program
+  0: MOV temp[0], input[0];
+  1: MOV temp[1], const[0];
+  2: ME_PRED_SEQ temp[3].w, none.0000;
+  3: BGNLOOP;
+  4:   SGE temp[2].x, temp[1].x___, const[1].x___; PRED_SET
+  5:   VE_PRED_SNEQ_PUSH temp[3].w, temp[3].___w, temp[2].___x;
+  6:   RCP temp[3].w, none.0000; PRED_SET
+  7:   ME_PRED_SET_POP temp[3].w, temp[3].___w;
+  8:   ADD temp[0], temp[0], input[1]; PRED_SET
+  9:   ADD temp[1].x, temp[1].x___, const[1].y___; PRED_SET
+ 10: ENDLOOP;
+ 11: MOV output[0], temp[0];
+ 12: MOV output[1], temp[1];
+=== END ===
