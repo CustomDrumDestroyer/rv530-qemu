@@ -56,7 +56,7 @@ cp -r "$HERE/kexts/QemuTabletFix.kext" "$OUT/EFI/OC/Kexts/"
 . "$HERE/host.sh"
 case "$(host_accel)" in
 kvm|hvf) export SL_SLTO=${SL_SLTO:-1000000} SL_TCG=${SL_TCG:-0} ;;
-*)       export SL_SLTO=${SL_SLTO:-3000000} SL_TCG=${SL_TCG:-1} ;;
+*)       export SL_SLTO=${SL_SLTO:-2000000} SL_TCG=${SL_TCG:-1} ;;
 esac
 python3 - "$TMP/Docs/Sample.plist" "$OUT/EFI/OC/config.plist" <<'EOF'
 import os, plistlib, sys, uuid
@@ -157,7 +157,15 @@ apple = '7C436110-AB2A-4BBB-A880-FE41995C9F82'
 # value must stay below 2^32 / TSC Hz: 2 s at 2.4 GHz wraps to ~225 ms.
 # 1 s is safe up to a 4.29 GHz TSC.  Under TCG (any non-x86_64 host) vCPUs
 # are slow enough to trip 1 s with 4 vCPUs; sl-vm.sh runs the TCG TSC at
-# 1.2 GHz there, so SL_SLTO defaults to 3 s (3.6e9 ticks still fits).
+# 1.2 GHz there, so SL_SLTO defaults to 2 s (2.4e9 ticks).
+# Hard ceiling: 2147483 us.  clear_wait_internal (osfmk/kern/sched_prim.c)
+# copies LockTimeOut (ns) into a signed int as its retry count; above
+# 2^31 ns it goes negative and the first contended wait-queue lock panics
+# with "clear_wait_internal: deadlock" (seen at 3 s on an M1 Max, in
+# AppleIntel8254XEthernet's delay_for_interval while the installer booted).
+if int(os.environ['SL_SLTO']) > 2147483:
+    sys.exit('SL_SLTO must be at most 2147483 (us): 10.6 keeps it in a signed '
+             'int and panics in clear_wait_internal above that')
 # debug=: keep bit 0x4 (DB_NMI) off.  With it the power button (QEMU's
 # system_powerdown) drops the kernel into the debugger, which waits for a
 # remote KDP connection: the whole guest freezes and the debugger takes

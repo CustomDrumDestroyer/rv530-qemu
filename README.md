@@ -139,7 +139,10 @@ What the scripts handle on a Mac:
   (`qemu/patches/0005`; at 1 GHz 10.6 panics building its commpage), 2 GB of
   guest memory by default, and two OpenCore kernel patches that make 10.6's
   spinlock and TLB-shootdown waits unbounded, since an emulated vCPU can be
-  held up for seconds.
+  held up for seconds. The lock timeout (`slto_us`) is 2 s: 10.6 keeps it
+  in a signed `int` in nanoseconds, so above about 2.1 s it goes negative
+  and the first wait-queue lock two vCPUs contend for panics with
+  "clear_wait_internal: deadlock".
 - **Under Hypervisor.framework (Intel):** the KVM CPU model without KVM's own
   options, and `qemu/patches/0008`, without which QEMU stops on an assertion
   as soon as 10.6's kernel takes over the std VGA display.
