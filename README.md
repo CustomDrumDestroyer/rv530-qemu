@@ -1,9 +1,10 @@
 # rv530-qemu: Mac OS X Snow Leopard with GPU acceleration in QEMU
 
 Run Mac OS X 10.6 (Snow Leopard) in a QEMU virtual machine with
-**Quartz Extreme and Core Image enabled**, without GPU passthrough, on an
-x86_64 Linux host (KVM) or a Mac: Intel (Hypervisor.framework) or Apple
-silicon (TCG).
+**Quartz Extreme and Core Image enabled**, without GPU passthrough.
+
+**[Read the wiki](https://github.com/CustomDrumDestroyer/rv530-qemu/wiki)** for
+setup, installation, troubleshooting, and the FAQ.
 
 The key piece is `rv530`, a QEMU display device that emulates an ATI Radeon
 X1600 (RV530, R5xx family) closely enough for Apple's own, unmodified ATI
@@ -23,12 +24,31 @@ boot-volume builder with the device properties Apple's driver expects, a
 launcher, and an optional guest agent for drag and drop, clipboard sync, and
 window-driven resizing.
 
-What works in a 10.6.8 guest: the Quartz Extreme desktop (translucency,
-shadows, Exposé, Dashboard, Cover Flow, Front Row), OpenGL applications
-(Chess, Grapher, screen savers), Core Image filters, Quartz Composer, and
-QuickTime video, at resolutions up to 2560x1600. Linux guests with the
-in-kernel `radeon` driver also work (KMS, fbcon, X with EXA and 3D
-compositing); Linux was the reference path during development.
+## Host support
+
+| Host | Guest runs under | Graphics | Status |
+| --- | --- | --- | --- |
+| x86_64 Linux | KVM | Vulkan on the host GPU | Reference host: fastest and most stable |
+| Intel Mac | Hypervisor.framework | Vulkan on MoltenVK | Newer, less tested |
+| Apple silicon Mac | TCG (emulated CPU, several times slower) | Vulkan on MoltenVK | Least stable |
+
+## What works
+
+In a Mac OS X 10.6.8 guest:
+
+- **Desktop:** Quartz Extreme (translucency, shadows, Exposé, Dashboard, Cover
+  Flow, Front Row) at up to 2560x1600.
+- **Graphics apps:** OpenGL (Chess, Grapher, screen savers), Core Image
+  filters, Quartz Composer, and QuickTime video.
+- **Host integration:** sound, plus drag and drop, clipboard sync, and
+  window-driven resizing with the optional guest agent.
+- **Linux guests:** the in-kernel `radeon` driver (KMS, fbcon, X with EXA and
+  3D compositing).
+
+Known bugs are tracked in
+[Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues).
+
+## Status
 
 This is a **proof of concept and a work in progress**: see
 [docs/STATUS.md](docs/STATUS.md) for per-module status and known gaps, and
