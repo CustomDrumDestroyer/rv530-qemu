@@ -47,6 +47,7 @@ In a Mac OS X 10.6.8 guest:
 
 Known bugs are tracked in
 [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues).
+[Contributions are welcome](#contributing).
 
 ## Status
 
@@ -306,6 +307,17 @@ Front Row's full-screen menu.
 
 QuickTime Player X playing Apple's sample movie; Core Video presents the
 frames through OpenGL as Y'CbCr textures.
+
+## Contributing
+
+Contributions are welcome: fork the repository and open a pull request. Help is
+especially welcome with:
+
+1. **Better macOS and Apple silicon host support**
+2. **Windows host support**, which doesn't exist yet
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has starting points for both, how to report
+bugs, and how to submit changes.
 
 ## Licensing
 
