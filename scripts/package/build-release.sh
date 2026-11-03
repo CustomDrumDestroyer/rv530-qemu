@@ -47,7 +47,7 @@ fi
 
 CONFIGURE_EXTRA="--prefix=$PREFIX --disable-guest-agent ${CONFIGURE_EXTRA:-}" \
     "$HERE/scripts/setup-qemu.sh" "$WORK"
-B=$WORK/qemu-11.1.2/build
+B=$WORK/qemu-11.1.3/build
 grep -q "r5xx_vk.c" "$B/build.ninja" || { echo "no Vulkan backend in this build" >&2; exit 1; }
 
 rm -rf "$PKG" "$OUT/stage"
@@ -121,7 +121,7 @@ EOF
         >> "$PKG/lib/bundled.txt"
     # Hypervisor.framework (Intel Macs) needs the entitlement QEMU's build
     # signs with; bundling rewrote the binary, so sign it again
-    codesign --force --sign - --entitlements "$WORK/qemu-11.1.2/accel/hvf/entitlements.plist" \
+    codesign --force --sign - --entitlements "$WORK/qemu-11.1.3/accel/hvf/entitlements.plist" \
         "$PKG/libexec/qemu-system-x86_64"
     codesign -d --entitlements - "$PKG/libexec/qemu-system-x86_64" 2>/dev/null |
         grep -q com.apple.security.hypervisor || { echo "entitlement missing" >&2; exit 1; }

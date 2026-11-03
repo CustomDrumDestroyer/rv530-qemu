@@ -204,7 +204,7 @@ jobs:
         run: |
           # the QEMU release the packages are built from, and this repository
           # at the tag (device, patches, scripts)
-          curl -fsSL -o dist/qemu-11.1.2.tar.xz https://download.qemu.org/qemu-11.1.2.tar.xz
+          curl -fsSL -o dist/qemu-11.1.3.tar.xz https://download.qemu.org/qemu-11.1.3.tar.xz
           git archive --prefix="rv530-qemu-$GITHUB_REF_NAME/" -o "dist/rv530-qemu-$GITHUB_REF_NAME-source.tar.gz" HEAD
           (cd dist && sha256sum * > SHA256SUMS)
       - name: Create the release

@@ -38,7 +38,7 @@ W=$HERE/work
 mkdir -p "$W"
 # QEMU from scripts/setup-qemu.sh, else from a release package (bin/)
 if [ -z "${QEMU:-}" ]; then
-    QEMU=$HERE/../build-qemu/qemu-11.1.2/build/qemu-system-x86_64
+    QEMU=$HERE/../build-qemu/qemu-11.1.3/build/qemu-system-x86_64
     [ -x "$QEMU" ] || [ ! -x "$HERE/../bin/qemu-system-x86_64" ] || QEMU=$HERE/../bin/qemu-system-x86_64
 fi
 # qemu-img from the same build, so the host needs no qemu-utils package

@@ -82,7 +82,7 @@ this repository.
 
 | Path | Contents |
 | --- | --- |
-| `qemu/hw/display/rv530/` | The device model: a drop-in directory for QEMU 11.1.2 |
+| `qemu/hw/display/rv530/` | The device model: a drop-in directory for QEMU 11.1.3 |
 | `qemu/patches/0001-build-glue-rv530.patch` | Build glue (meson, Kconfig). Builds the Vulkan backend when the `vulkan` and `shaderc` pkg-config packages are found, and the CPU path only otherwise |
 | `qemu/patches/0002-ui-input-last-abs.patch` | Lets a display device read the last absolute pointer position, which the device uses to recover the cursor hot spot |
 | `qemu/patches/0003-ui-gtk-dnd.patch` | GTK UI: drag and drop of files to and from the guest agent |
@@ -93,7 +93,7 @@ this repository.
 | `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): page-aligns the dirty-log clear that std VGA makes unaligned, which QEMU 11.1.2 asserted on |
 | `snowleopard/` | Everything for the Snow Leopard guest: launcher (with `host.sh`, which picks KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the card's GOP driver, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
 | `scripts/package/`, `.github/workflows/release.yml` | Builds the pre-built packages on GitHub Actions |
-| `scripts/setup-qemu.sh` | Fetches QEMU 11.1.2, installs the device, applies the patches, builds QEMU and the option ROM |
+| `scripts/setup-qemu.sh` | Fetches QEMU 11.1.3, installs the device, applies the patches, builds QEMU and the option ROM |
 | `scripts/atombios/mkrom.py` | Builds a synthetic, clean-room AtomBIOS option ROM for the device |
 | `scripts/dnd/`, `scripts/agent-update.sh` | Host side of drag and drop and clipboard sync; installs the guest agent over ssh |
 | `scripts/atomdis.py`, `scripts/regnames.py` | AtomBIOS command-table disassembler with register names (a debugging aid) |
@@ -148,7 +148,7 @@ sudo apt install build-essential ninja-build meson python3 pkg-config libglib2.0
 scripts/setup-qemu.sh
 ```
 
-This produces `build-qemu/qemu-11.1.2/build/qemu-system-x86_64` and the
+This produces `build-qemu/qemu-11.1.3/build/qemu-system-x86_64` and the
 option ROM `build-rom/rv530-atombios.rom`.
 
 ### macOS hosts
