@@ -122,7 +122,8 @@ licenses. The macOS packages are not notarized: after unpacking one, run
 `xattr -dr com.apple.quarantine rv530-qemu-*-macos-*` once so that
 Gatekeeper lets it run.
 
-To make a release, push a tag such as `v0.1.0`; running the workflow by hand
+To make a release, push a tag with the date, `vYYYY.MM.DD` (such as
+`v2026.11.02`, with a suffix like `.1` for a second release that day); running the workflow by hand
 (Actions > Release > Run workflow) builds the packages as artifacts only.
 
 ## Building
