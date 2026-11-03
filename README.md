@@ -66,10 +66,14 @@ the emulated GPU.
 
 ## Quick start
 
-1. Build QEMU with the device: `scripts/setup-qemu.sh` (see Building below).
-2. Follow [snowleopard/README.md](snowleopard/README.md): build OVMF and the
-   OpenCore boot volume, install Mac OS X from your own install media with
-   your own SMC key, then start it with `DISPLAY_MODE=rv530`.
+1. Download a pre-built package for x86_64 Linux, an Apple silicon Mac, or an
+   Intel Mac from the [Releases](../../releases) page (see Pre-built packages
+   below), or build QEMU with the device yourself: `scripts/setup-qemu.sh`
+   (see Building below).
+2. Follow [snowleopard/README.md](snowleopard/README.md): build OVMF (a
+   package already has it) and the OpenCore boot volume, install Mac OS X from
+   your own install media with your own SMC key, then start it with
+   `DISPLAY_MODE=rv530`.
 
 No Apple software, Apple keys, or VBIOS images are included or needed from
 this repository.
@@ -88,6 +92,7 @@ this repository.
 | `qemu/patches/0007-rv530-metal-check-macos.patch` | macOS hosts: builds `r5xx_vk_mac.m`, which checks the Metal devices before MoltenVK is loaded |
 | `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): page-aligns the dirty-log clear that std VGA makes unaligned, which QEMU 11.1.2 asserted on |
 | `snowleopard/` | Everything for the Snow Leopard guest: launcher (with `host.sh`, which picks KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the card's GOP driver, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
+| `scripts/package/`, `.github/workflows/release.yml` | Builds the pre-built packages on GitHub Actions |
 | `scripts/setup-qemu.sh` | Fetches QEMU 11.1.2, installs the device, applies the patches, builds QEMU and the option ROM |
 | `scripts/atombios/mkrom.py` | Builds a synthetic, clean-room AtomBIOS option ROM for the device |
 | `scripts/dnd/`, `scripts/agent-update.sh` | Host side of drag and drop and clipboard sync; installs the guest agent over ssh |
@@ -96,6 +101,29 @@ this repository.
 | `qemu/hw/display/rv530/tests/` | Unit tests: vertex programs (`pvs/`), fragment programs (`us/`), rasterizer (`raster/`), texture formats and sampling (`tex/`), and Vulkan-vs-CPU differential tests (`vk/`) |
 | `qemu/hw/display/rv530/tools/mesa-rc/` | Wraps Mesa's r300/r500 shader compiler as a command-line tool, used as ground truth for the shader decoders |
 | `docs/` | Design document, status, screenshots |
+
+## Pre-built packages
+
+Each [release](../../releases) has packages built by GitHub Actions
+(`.github/workflows/release.yml`):
+
+| Package | Host |
+| --- | --- |
+| `rv530-qemu-*-linux-x86_64.tar.gz` | x86_64 Linux with glibc 2.35 or later (Ubuntu 22.04, Debian 12, Fedora, Arch, and similar), with GTK 3 and a Vulkan driver |
+| `rv530-qemu-*-macos-arm64.tar.gz` | Apple silicon Macs |
+| `rv530-qemu-*-macos-x86_64.tar.gz` | Intel Macs |
+
+A package holds QEMU with the device (`bin/`, with the libraries it needs in
+`lib/` and, on macOS, MoltenVK), OVMF with the card's firmware driver
+(`firmware/`), the option ROM (`build-rom/`), and this repository's scripts
+and documentation; `snowleopard/sl-vm.sh` finds them there, so nothing needs
+to be built. `THIRD-PARTY-NOTICES.md` lists the bundled libraries and their
+licenses. The macOS packages are not notarized: after unpacking one, run
+`xattr -dr com.apple.quarantine rv530-qemu-*-macos-*` once so that
+Gatekeeper lets it run.
+
+To make a release, push a tag such as `v0.1.0`; running the workflow by hand
+(Actions > Release > Run workflow) builds the packages as artifacts only.
 
 ## Building
 

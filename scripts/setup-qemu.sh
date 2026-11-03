@@ -70,8 +70,10 @@ Darwin)
     done
     PY=(${PY:+--python="$PY"})
     JOBS=$(sysctl -n hw.ncpu)
-    # Homebrew's keg-only pkg-config files (vulkan-loader, shaderc)
-    if command -v brew >/dev/null; then
+    # Homebrew's keg-only pkg-config files (vulkan-loader, shaderc); not
+    # when MacPorts is installed, which then provides the libraries (an Intel
+    # Mac may have both, and QEMU must not link a mix of the two)
+    if [ ! -x /opt/local/bin/port ] && command -v brew >/dev/null; then
         export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
     fi ;;
 *)

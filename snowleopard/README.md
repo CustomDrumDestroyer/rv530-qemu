@@ -55,6 +55,12 @@ SL_PICKER=1 snowleopard/make-opencore.sh   # with the boot picker, for installin
 `build-ovmf.sh` clones edk2 and takes a few minutes. It builds nasm and iasl
 itself if they are missing.
 
+With a pre-built package from the repository's releases (top-level
+`README.md`, "Pre-built packages"), QEMU, OVMF and the option ROM are already
+built: run only `make-opencore.sh`, from the unpacked package, which needs
+python3, unzip, curl, dosfstools and mtools (on a Mac, Homebrew's or
+MacPorts' dosfstools and mtools).
+
 ### 2. Install Mac OS X
 
 Install on the standard VGA display first:
@@ -108,7 +114,7 @@ with the software renderer (expect `max diff 0`).
 | `XRES`, `YRES`, `XMAX`, `YMAX` | The EDID's preferred mode (default 1440x900) and largest mode (default 2560x1600) |
 | `REFRESH=Hz` | Refresh rate of the preferred mode (default 60, up to 240) |
 | `AUTORESIZE=1` | The guest resolution follows the QEMU window (with the agent installed). View → Resize Guest with Window (GTK or Cocoa) switches it at run time; with the Cocoa window it also turns on Zoom To Fit. |
-| `AUDIO=usb` | A USB audio output that Apple's AppleUSBAudio drives; `AUDIO_BACKEND` picks the host side (pipewire, pa, alsa, sdl, coreaudio on a Mac, or wav with `AUDIO_WAV`) |
+| `AUDIO=usb` | A USB audio output that Apple's AppleUSBAudio drives; the host side is Core Audio on a Mac and, on Linux, the first of PipeWire, PulseAudio, and ALSA that QEMU can load (a release package has PulseAudio, which works on PipeWire desktops with the PulseAudio client library, and ALSA). `AUDIO_BACKEND` picks another (pipewire, pa, alsa, sdl, coreaudio, or wav with `AUDIO_WAV`) |
 | `DND=1`, `CLIPBOARD=1` | Drag and drop and text clipboard sync with the agent (GTK window on Linux, Cocoa window on a Mac) |
 | `SSHPORT` | Host port forwarded to the guest's ssh (default 2222, on 127.0.0.1 only) |
 | `EXTRA` | Extra QEMU arguments |

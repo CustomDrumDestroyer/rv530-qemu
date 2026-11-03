@@ -36,7 +36,11 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 W=$HERE/work
 mkdir -p "$W"
-QEMU=${QEMU:-$HERE/../build-qemu/qemu-11.1.2/build/qemu-system-x86_64}
+# QEMU from scripts/setup-qemu.sh, else from a release package (bin/)
+if [ -z "${QEMU:-}" ]; then
+    QEMU=$HERE/../build-qemu/qemu-11.1.2/build/qemu-system-x86_64
+    [ -x "$QEMU" ] || [ ! -x "$HERE/../bin/qemu-system-x86_64" ] || QEMU=$HERE/../bin/qemu-system-x86_64
+fi
 # qemu-img from the same build, so the host needs no qemu-utils package
 QEMU_IMG=${QEMU_IMG:-$(dirname "$QEMU")/qemu-img}
 [ -x "$QEMU_IMG" ] || QEMU_IMG=qemu-img
@@ -53,10 +57,14 @@ VNC=${VNC:-:2}
 SERIAL=${SERIAL:-file:$W/serial.log}
 DISPLAY_MODE=${DISPLAY_MODE:-std}
 # OVMF from build-ovmf.sh (with the rv530 GOP driver) when it has been built,
-# otherwise the distribution's (enough for DISPLAY_MODE=std)
+# else a release package's (firmware/), otherwise the distribution's (enough
+# for DISPLAY_MODE=std)
 if [ -f "$W/fw/OVMF_CODE.fd" ]; then
     OVMF_CODE=${OVMF_CODE:-$W/fw/OVMF_CODE.fd}
     OVMF_VARS_TEMPLATE=${OVMF_VARS_TEMPLATE:-$W/fw/OVMF_VARS.fd}
+elif [ -f "$HERE/../firmware/OVMF_CODE.fd" ]; then
+    OVMF_CODE=${OVMF_CODE:-$HERE/../firmware/OVMF_CODE.fd}
+    OVMF_VARS_TEMPLATE=${OVMF_VARS_TEMPLATE:-$HERE/../firmware/OVMF_VARS.fd}
 fi
 for d in /usr/share/OVMF/OVMF_%s_4M.fd /usr/share/edk2/x64/OVMF_%s.4m.fd \
          /usr/share/edk2-ovmf/x64/OVMF_%s.4m.fd; do
@@ -140,8 +148,18 @@ fi
 SND=()
 case "${AUDIO:-none}" in
 none) ;;
-usb)  case "$(uname -s)" in Darwin) DEFAB=coreaudio ;; *) DEFAB=pipewire ;; esac
-      AB=${AUDIO_BACKEND:-$DEFAB}
+usb)  # the first driver this QEMU has and can load (a release package has
+      # PulseAudio and ALSA, as modules that need the host's libraries)
+      AB=${AUDIO_BACKEND:-}
+      if [ -z "$AB" ]; then
+          case "$(uname -s)" in Darwin) AB=coreaudio ;; *)
+              DRV=$("$QEMU" -audiodev help)
+              for d in pipewire pa alsa; do
+                  if grep -qx "$d" <<<"$DRV"; then AB=$d; break; fi
+              done
+              [ -n "$AB" ] || { echo "AUDIO=usb: no PipeWire, PulseAudio, or ALSA driver; install libpulse or set AUDIO_BACKEND" >&2; exit 1; } ;;
+          esac
+      fi
       [ "$AB" = wav ] && AB="wav,path=${AUDIO_WAV:-$W/audio.wav}"
       SND=(-audiodev "$AB,id=snd0" -device usb-audio,audiodev=snd0,bus=uhci.0) ;;
 *) echo "AUDIO must be none or usb" >&2; exit 1 ;;
