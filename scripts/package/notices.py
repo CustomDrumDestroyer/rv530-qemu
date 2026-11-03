@@ -87,9 +87,9 @@ def main():
             shutil.copy2(f, os.path.join(lic_dir, f'{p}.{os.path.basename(f)}'))
     with open(os.path.join(pkg, 'THIRD-PARTY-NOTICES.md'), 'w') as f:
         f.write('# Third-party software in this package\n\n')
-        f.write('- **QEMU 11.1.2** with the patches in `qemu/patches/` and the rv530 device in '
+        f.write('- **QEMU 11.1.3** with the patches in `qemu/patches/` and the rv530 device in '
                 '`qemu/hw/display/rv530/`: GNU GPL version 2 (`COPYING`). The QEMU source is '
-                '`qemu-11.1.2.tar.xz` from https://download.qemu.org/, also attached to this '
+                '`qemu-11.1.3.tar.xz` from https://download.qemu.org/, also attached to this '
                 'release; the device and patches are in this package.\n')
         if os.path.isdir(os.path.join(pkg, 'firmware')):
             f.write('- **OVMF** (`firmware/`), built from edk2 tag edk2-stable202608 '

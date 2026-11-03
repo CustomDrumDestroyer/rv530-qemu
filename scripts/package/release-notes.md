@@ -1,4 +1,4 @@
-Pre-built packages of QEMU 11.1.2 with the emulated Radeon X1600 (rv530),
+Pre-built packages of QEMU 11.1.3 with the emulated Radeon X1600 (rv530),
 with OVMF (with the card's firmware graphics driver), the synthetic option
 ROM, and this repository's scripts and documentation.
 
@@ -27,6 +27,6 @@ Leopard, and the Vulkan backend has not been tested on an Intel Mac's own GPU.
 
 `THIRD-PARTY-NOTICES.md` in each package lists the bundled libraries and
 their licenses.  The QEMU source the packages are built from
-(`qemu-11.1.2.tar.xz`) and this repository at the tag are attached below.
+(`qemu-11.1.3.tar.xz`) and this repository at the tag are attached below.
 This project is provided as is, without warranty (see the README's
 Disclaimer).

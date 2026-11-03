@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fetch QEMU 11.1.2, drop in the rv530 device, apply the patches, build QEMU
+# Fetch QEMU 11.1.3, drop in the rv530 device, apply the patches, build QEMU
 # and the synthetic AtomBIOS option ROM.
 # Usage: scripts/setup-qemu.sh [workdir]   (default: ./build-qemu)
 # CONFIGURE_EXTRA adds options to QEMU's configure.
@@ -21,13 +21,13 @@ case "$WORK" in
     WORK=$REAL ;;
 esac
 mkdir -p "$WORK"; cd "$WORK"
-if [ ! -f qemu-11.1.2.tar.xz ]; then
-    curl -fLO https://download.qemu.org/qemu-11.1.2.tar.xz
+if [ ! -f qemu-11.1.3.tar.xz ]; then
+    curl -fLO https://download.qemu.org/qemu-11.1.3.tar.xz
 fi
-if [ ! -d qemu-11.1.2 ]; then
-    tar -xJf qemu-11.1.2.tar.xz
+if [ ! -d qemu-11.1.3 ]; then
+    tar -xJf qemu-11.1.3.tar.xz
 fi
-cd qemu-11.1.2
+cd qemu-11.1.3
 rm -rf hw/display/rv530
 cp -r "$HERE/qemu/hw/display/rv530" hw/display/rv530
 if ! grep -q "hw/display/rv530" meson.build; then
@@ -94,5 +94,5 @@ else
 fi
 mkdir -p "$HERE/build-rom"
 python3 "$HERE/scripts/atombios/mkrom.py" "$HERE/build-rom/rv530-atombios.rom"
-echo "built: $WORK/qemu-11.1.2/build/qemu-system-x86_64"
+echo "built: $WORK/qemu-11.1.3/build/qemu-system-x86_64"
 echo "ROM:   $HERE/build-rom/rv530-atombios.rom"
