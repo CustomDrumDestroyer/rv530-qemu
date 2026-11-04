@@ -55,6 +55,10 @@ if ! grep -q "KVM's clear does" accel/hvf/hvf-all.c; then
     patch -p1 < "$HERE/qemu/patches/0008-hvf-log-clear-page-align.patch"
 fi
 
+if ! grep -q "check_clean" accel/tcg/cputlb.c; then
+    patch -p1 < "$HERE/qemu/patches/0009-tcg-notdirty-race.patch"
+fi
+
 case "$(uname -s)" in
 Darwin)
     UI=(--enable-cocoa --enable-sdl)

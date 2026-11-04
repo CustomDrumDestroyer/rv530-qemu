@@ -1,0 +1,87 @@
+--- a/accel/tcg/cputlb.c
++++ b/accel/tcg/cputlb.c
+@@ -951,7 +951,7 @@
+ 
+ /* update the TLB corresponding to virtual page vaddr
+    so that it is no longer dirty */
+-static void tlb_set_dirty(CPUState *cpu, vaddr addr)
++static void tlb_set_dirty(CPUState *cpu, vaddr addr, ram_addr_t ram_addr)
+ {
+     int mmu_idx;
+ 
+@@ -959,6 +959,16 @@
+ 
+     addr &= TARGET_PAGE_MASK;
+     qemu_spin_lock(&cpu->neg.tlb.c.lock);
++    /*
++     * Checked under the lock, against tlb_reset_dirty(), which runs after the
++     * bits are cleared: otherwise this could undo the TLB_NOTDIRTY it just
++     * set, and this vCPU's writes to the page would miss the dirty log until
++     * the next reset.
++     */
++    if (physical_memory_is_clean(ram_addr)) {
++        qemu_spin_unlock(&cpu->neg.tlb.c.lock);
++        return;
++    }
+     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+         tlb_set_dirty1_locked(tlb_entry(cpu, mmu_idx, addr), addr);
+     }
+@@ -1034,7 +1044,7 @@
+     hwaddr iotlb, xlat, sz, paddr_page;
+     vaddr addr_page;
+     int asidx, wp_flags, prot;
+-    bool is_ram, is_romd;
++    bool is_ram, is_romd, check_clean;
+ 
+     assert_cpu_is_self(cpu);
+ 
+@@ -1075,6 +1085,7 @@
+     }
+ 
+     write_flags = read_flags;
++    check_clean = false;
+     if (is_ram) {
+         iotlb = memory_region_get_ram_addr(section->mr) + xlat;
+         assert(!(iotlb & ~TARGET_PAGE_MASK));
+@@ -1085,8 +1096,8 @@
+         if (prot & PAGE_WRITE) {
+             if (section->readonly) {
+                 write_flags |= TLB_DISCARD_WRITE;
+-            } else if (physical_memory_is_clean(iotlb)) {
+-                write_flags |= TLB_NOTDIRTY;
++            } else {
++                check_clean = true;
+             }
+         }
+     } else {
+@@ -1118,6 +1129,17 @@
+      */
+     qemu_spin_lock(&tlb->c.lock);
+ 
++    /*
++     * Read the dirty bits under the lock.  A thread clearing them then takes
++     * this lock in tlb_reset_dirty(): either we see the cleared bits, or it
++     * sees the entry we install and sets TLB_NOTDIRTY.  Read earlier, the
++     * entry could go in without TLB_NOTDIRTY after that walk, and this vCPU's
++     * writes to the page would miss the dirty log until the next reset.
++     */
++    if (check_clean && physical_memory_is_clean(iotlb)) {
++        write_flags |= TLB_NOTDIRTY;
++    }
++
+     /* Note that the tlb is no longer clean.  */
+     tlb->c.dirty |= 1 << mmu_idx;
+ 
+@@ -1352,10 +1374,8 @@
+     physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);
+ 
+     /* We remove the notdirty callback only if the code has been flushed. */
+-    if (!physical_memory_is_clean(ram_addr)) {
+-        trace_memory_notdirty_set_dirty(mem_vaddr);
+-        tlb_set_dirty(cpu, mem_vaddr);
+-    }
++    trace_memory_notdirty_set_dirty(mem_vaddr);
++    tlb_set_dirty(cpu, mem_vaddr, ram_addr);
+ }
+ 
+ static int probe_access_internal(CPUState *cpu, vaddr addr,

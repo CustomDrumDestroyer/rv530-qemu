@@ -91,6 +91,7 @@ this repository.
 | `qemu/patches/0006-ui-cocoa-rv530.patch` | Cocoa UI (macOS hosts): drag and drop with the guest agent, View → Resize Guest with Window, window size in points |
 | `qemu/patches/0007-rv530-metal-check-macos.patch` | macOS hosts: builds `r5xx_vk_mac.m`, which checks the Metal devices before MoltenVK is loaded |
 | `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): page-aligns the dirty-log clear that std VGA makes unaligned, which QEMU 11.1.2 asserted on |
+| `qemu/patches/0009-tcg-notdirty-race.patch` | TCG: reads the dirty bits under the TLB lock when a TLB entry is installed or its `TLB_NOTDIRTY` is removed, so a concurrent dirty-log reset can't leave a vCPU writing a page without logging it |
 | `snowleopard/` | Everything for the Snow Leopard guest: launcher (with `host.sh`, which picks KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the card's GOP driver, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
 | `scripts/package/`, `.github/workflows/release.yml` | Builds the pre-built packages on GitHub Actions |
 | `scripts/setup-qemu.sh` | Fetches QEMU 11.1.3, installs the device, applies the patches, builds QEMU and the option ROM |
