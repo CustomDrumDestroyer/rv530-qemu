@@ -312,6 +312,9 @@ static void surf_write(const R5xxRaster *r, const R5xxSurfaceLayout *l,
     uint8_t *p = m->map ? m->map(m->opaque, addr, l->bpp, true) : NULL;
     if (p) {
         memcpy(p, buf, l->bpp);
+        if (m->written) {
+            m->written(m->opaque, p, l->bpp);
+        }
     } else {
         m->write(m->opaque, addr, buf, l->bpp);
     }

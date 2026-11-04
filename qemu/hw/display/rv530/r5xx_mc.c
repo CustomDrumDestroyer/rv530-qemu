@@ -361,12 +361,21 @@ void rv530_gpu_write(RV530State *s, uint32_t addr, const void *buf, uint32_t len
 
 static uint8_t *mem_map(void *opaque, uint32_t addr, uint32_t len, bool write)
 {
+    return rv530_gpu_map(opaque, addr, len, write);
+}
+
+/*
+ * After the store, not at map time: raster workers write with the BQL
+ * released, and a dirty-log collect between the two would clear the mark and
+ * lose the write.
+ */
+static void mem_written(void *opaque, uint8_t *p, uint32_t len)
+{
     RV530State *s = opaque;
-    uint8_t *p = rv530_gpu_map(s, addr, len, write);
-    if (p && write && p >= s->vram_ptr && p < s->vram_ptr + s->vram_size) {
+
+    if (p >= s->vram_ptr && p < s->vram_ptr + s->vram_size) {
         memory_region_set_dirty(&s->vram, p - s->vram_ptr, len);
     }
-    return p;
 }
 
 static void mem_read(void *opaque, uint32_t addr, void *buf, uint32_t len)
@@ -396,6 +405,7 @@ void rv530_mc_init(RV530State *s)
     s->mem.map = mem_map;
     s->mem.read = mem_read;
     s->mem.write = mem_write;
+    s->mem.written = mem_written;
     s->mem.log = mem_log;
 }
 

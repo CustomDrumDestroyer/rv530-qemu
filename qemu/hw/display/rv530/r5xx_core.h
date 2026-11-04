@@ -51,6 +51,8 @@ typedef struct R5xxMem {
     uint8_t *(*map)(void *opaque, uint32_t gpu_addr, uint32_t len, bool write);
     void (*read)(void *opaque, uint32_t gpu_addr, void *buf, uint32_t len);
     void (*write)(void *opaque, uint32_t gpu_addr, const void *buf, uint32_t len);
+    /* optional: a store through a pointer from map(write = true) has finished */
+    void (*written)(void *opaque, uint8_t *host, uint32_t len);
     /* diagnostic output, level: 0 = error, 1 = warning, 2 = info, 3 = debug */
     void (*log)(void *opaque, int level, const char *fmt, va_list ap)
         __attribute__((format(printf, 3, 0)));
