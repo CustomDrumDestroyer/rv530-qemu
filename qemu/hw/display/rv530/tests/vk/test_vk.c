@@ -574,6 +574,102 @@ static void scenario_order(int trials, int ndraws)
 }
 
 /*
+ * The display refresh submits queued uploads without waiting for them
+ * (r5xx_vk_upload_kick), and the next batch may start while that copy runs.
+ * The batch must see the copy finished: a draw must sample what the copy
+ * brought in, and the copy must not overwrite what the draw rendered.
+ */
+static void kick_draw(R5xxVkDrawReq *req, RvkDraw *draw, RvkVertex *gv)
+{
+    char err[256];
+    int i, nv = 0;
+
+    r5xx_raster_setup(&R, err, sizeof(err));
+    rvk_build_draw(draw, &R, samp, tex_used, consts, &vram_only, err, sizeof(err));
+    for (i = 0; i < ntris; i++) {
+        nv += rvk_triangle(&gv[nv], &R, &tris[i * 3], &tris[i * 3 + 1], &tris[i * 3 + 2], false);
+    }
+    memset(req, 0, sizeof(*req));
+    req->draw = draw; req->verts = gv; req->nverts = nv; req->prog = dec;
+    req->prog_hash = r500_us_hash(dec);
+    req->sc_x0 = 0; req->sc_y0 = 0; req->sc_x1 = RT_W - 1; req->sc_y1 = RT_H - 1;
+    rvk_dirty_ranges(req, &R, &vram_only, 0, RT_H - 1);
+}
+
+static void scenario_kick(int trials)
+{
+    char err[256];
+    static RvkVertex gv[64];
+    RvkDraw *draw = calloc(1, sizeof(RvkDraw));
+    R5xxVkDrawReq req;
+    int t, bad_rt = 0, bad_tex = 0;
+
+    /* the copy must not overwrite the draw */
+    for (t = 0; t < trials; t++) {
+        uint32_t i, wrong = 0;
+
+        raster_defaults();
+        R.regs.rb3d_colorpitch[0] = RT_W | (6u << 21);      /* linear */
+        tex_used = 0;
+        load_prog(prog_color, 1);
+        R.us.prog = dec;
+        ntris = 0;
+        add_quad(0, 0, RT_W, RT_H, 0.5f, r5xx_vec4_make(1, 0, 0, 1), 0, 0, 1, 1);
+        memset(vram + RT_OFF, 0x11, RT_W * RT_H * 4);
+        kick_draw(&req, draw, gv);
+        r5xx_vk_upload(vk, 0, VRAM_SIZE);
+        r5xx_vk_upload_kick(vk);
+        if (!r5xx_vk_draw(vk, &req, err, sizeof(err))) {
+            printf("FAIL [kick] vk draw: %s\n", err);
+            failures++;
+            free(draw);
+            return;
+        }
+        r5xx_vk_flush(vk);
+        for (i = 0; i < RT_W * RT_H; i++) {
+            wrong += vram[RT_OFF + i * 4 + 2] != 0xff;      /* red, BGRA */
+        }
+        bad_rt += wrong != 0;
+    }
+    /* the draw must sample what the copy brought in */
+    for (t = 0; t < trials; t++) {
+        uint32_t i, wrong = 0;
+        uint8_t v = 0x20 + (t & 0x7f);
+
+        raster_defaults();
+        R.regs.rb3d_colorpitch[0] = RT_W | (6u << 21);      /* linear */
+        tex_used = 0;
+        set_tex(0, TEX_OFF | 0xc, 0x8007a0e2, 0x0000a60c, 0x000000ff, 0x00000a92, 0);
+        load_prog(prog_composite, 2);
+        R.us.prog = dec;
+        ntris = 0;
+        add_quad(0, 0, 16, 16, 0.5f, r5xx_vec4_make(1, 1, 1, 1), 0, 0, 16, 16);
+        memset(vram + TEX_OFF, v, 1 << 20);
+        memset(vram + RT_OFF, 0, RT_W * RT_H * 4);
+        kick_draw(&req, draw, gv);
+        r5xx_vk_upload(vk, 0, VRAM_SIZE);
+        r5xx_vk_upload_kick(vk);
+        if (!r5xx_vk_draw(vk, &req, err, sizeof(err))) {
+            printf("FAIL [kick] vk draw: %s\n", err);
+            failures++;
+            free(draw);
+            return;
+        }
+        r5xx_vk_flush(vk);
+        for (i = 0; i < 16; i++) {
+            wrong += vram[RT_OFF + 8 * RT_W * 4 + i * 4] != v;
+        }
+        bad_tex += wrong != 0;
+    }
+    printf("%s [kick: %d trials] draw overwritten by the copy in %d, stale texture sampled in %d\n",
+           bad_rt || bad_tex ? "FAIL" : "ok  ", trials, bad_rt, bad_tex);
+    if (bad_rt || bad_tex) {
+        failures++;
+    }
+    free(draw);
+}
+
+/*
  * A guest CPU write while a batch is pending: another vCPU writes
  * VRAM inside the batch's render band (rows are rounded to 32 for the
  * write-back) but outside what the draw covers.  The write-back must not
@@ -859,6 +955,7 @@ int main(void)
     scenario_uv88();
     scenario_fp16();
     scenario_cpu_write_in_band();
+    scenario_kick(getenv("RVK_KICK_TRIALS") ? atoi(getenv("RVK_KICK_TRIALS")) : 100);
     scenario_order(getenv("RVK_ORDER_TRIALS") ? atoi(getenv("RVK_ORDER_TRIALS")) : 50, 32);
     if (getenv("RVK_BENCH")) {
         bench(200, false);
