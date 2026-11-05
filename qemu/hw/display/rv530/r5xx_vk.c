@@ -1322,6 +1322,14 @@ static void stale_take_ex(R5xxVk *vk, uint64_t off, uint64_t len, RvkCopies *c,
         if (rendered && (rendered[pg >> 6] & bit)) {
             copies_add_unrendered(vk, pg << RVK_PAGE_SHIFT,
                                   (pg + 1) << RVK_PAGE_SHIFT, c);
+            /*
+             * The guest may have written inside the render ranges too, and
+             * those bytes were not copied.  Leave the page stale, so the
+             * next batch uploads all of it, after the write-back has put
+             * the GPU's bytes in host VRAM.
+             */
+            vk->stale[pg >> 6] |= bit;
+            vk->stale_pages++;
         } else {
             copies_add(c, pg << RVK_PAGE_SHIFT, 1ull << RVK_PAGE_SHIFT);
         }
@@ -2274,18 +2282,29 @@ uint64_t r5xx_vk_flush(R5xxVk *vk)
     if (saved) {
         check_writeback(vk, saved);
     }
-    if (vk->wb_n) {
-        wb_merge_pages(vk);
-    }
     if (vk->shadow && vk->mirror) {
-        /* rendered ranges are back in host VRAM */
+        /*
+         * Ranges copied straight to host VRAM match it now.  Captured pages
+         * don't: wb_merge_pages() gives the shadow what the mirror really
+         * holds, so a byte the mirror missed still shows up in the check.
+         */
         for (i = 0; i < vk->ndirty; i++) {
             if (vk->dirty_off[i] < RVK_GART_SPACE && vk->dirty_off[i] < vk->vram_size) {
-                uint64_t len = vk->dirty_len[i] < vk->vram_size - vk->dirty_off[i] ?
-                               vk->dirty_len[i] : vk->vram_size - vk->dirty_off[i];
-                memcpy(vk->shadow + vk->dirty_off[i], vk->vram_host + vk->dirty_off[i], len);
+                uint64_t o = vk->dirty_off[i];
+                uint64_t e = o + (vk->dirty_len[i] < vk->vram_size - o ?
+                                  vk->dirty_len[i] : vk->vram_size - o);
+                while (o < e) {
+                    uint64_t pe = MIN_U64(e, ((o >> RVK_PAGE_SHIFT) + 1) << RVK_PAGE_SHIFT);
+                    if (!vk->wb_merge || !vk->wb_slot[o >> RVK_PAGE_SHIFT]) {
+                        memcpy(vk->shadow + o, vk->vram_host + o, pe - o);
+                    }
+                    o = pe;
+                }
             }
         }
+    }
+    if (vk->wb_n) {
+        wb_merge_pages(vk);
     }
     vk->wb_n = 0;
     zpass = ((volatile uint32_t *)vk->counts.map)[0];
