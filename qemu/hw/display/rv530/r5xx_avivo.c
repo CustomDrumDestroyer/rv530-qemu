@@ -372,12 +372,17 @@ static void rv530_collect_dirty_untimed(RV530State *s);
  * deadlocks against another vCPU waiting in start_exclusive() (e.g.
  * cpu_exec_step_atomic) for this one to leave its exec region.  VRAM is
  * plain RAM: under TCG its dirty bits come from the TCG write path and the
- * snapshot resets the TLBs itself, so a vCPU caller skips the rendezvous.
- * KVM (and the main loop) keep the full path with its dirty-log sync.
+ * snapshot resets the TLBs itself, so TCG skips the rendezvous.
+ *
+ * The main loop must skip it too.  run_on_cpu() releases the BQL, and at that
+ * point the bits are already clear but the pages aren't marked stale yet.  A
+ * vCPU starting a batch then sees the mirror as current and samples old
+ * data, so the guest composites stale content that stays until the next
+ * redraw.  KVM keeps the full path with its dirty-log sync.
  */
 DirtyBitmapSnapshot *rv530_vram_snapshot_dirty(RV530State *s)
 {
-    if (tcg_enabled() && current_cpu) {
+    if (tcg_enabled()) {
         return physical_memory_snapshot_and_clear_dirty(&s->vram, 0, s->vram_size,
                                                         DIRTY_MEMORY_VGA);
     }
