@@ -8,6 +8,12 @@ ROM, and this repository's scripts and documentation.
 | `rv530-qemu-*-macos-arm64.tar.gz` | Apple silicon Macs (the guest runs under TCG) |
 | `rv530-qemu-*-macos-x86_64.tar.gz` | Intel Macs (the guest runs under Hypervisor.framework) |
 
+**Changes for Apple silicon (TCG):** a fix for stale window content and "missed
+write" reports with a display attached and several vCPUs (#4, #6).  It was
+tested from a source build on one Apple silicon Mac, with no missed writes or
+stale rows in three runs, and those issues stay open for confirmation.  If you
+still see stale content, please report it there.
+
 Unpack one and follow `snowleopard/README.md` from step 2: `sl-vm.sh` uses
 the package's emulator, firmware, and option ROM, so there is nothing to
 build.  The macOS packages bundle MoltenVK.
@@ -21,9 +27,9 @@ rv530-qemu-*-macos-*` once.
 
 **How these were tested:** every package is built and smoke-tested on GitHub's
 runners (it starts and initializes the emulated card), and the Linux package
-on five distributions in clean containers.  The Linux package was also booted
-into Snow Leopard by hand.  The macOS packages have not been booted into Snow
-Leopard, and the Vulkan backend has not been tested on an Intel Mac's own GPU.
+on five distributions in clean containers.  The packages themselves have not
+been booted into Snow Leopard, and the Vulkan backend has not been tested on
+an Intel Mac's own GPU.
 
 `THIRD-PARTY-NOTICES.md` in each package lists the bundled libraries and
 their licenses.  The QEMU source the packages are built from
