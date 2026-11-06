@@ -62,7 +62,7 @@ This project is a **proof of concept and a work in progress**.
   known gaps.
 - [docs/DESIGN.md](docs/DESIGN.md) gives the original design.
 
-We prepared this project with AI tools. We supply it as is, without warranty.
+We made this project with AI tools and provide it "as is," without warranty.
 See [Disclaimer](#disclaimer).
 
 ![The Mac OS X 10.6 desktop on the emulated Radeon X1600, with the translucent menu bar and the 3D Dock](docs/img/snowleopard-desktop.png)
@@ -255,7 +255,7 @@ Tests:
 ## The option ROM
 
 The card needs an AtomBIOS option ROM. Drivers use it to find the connectors
-and to set the display timings. Real VBIOS images are copyrighted. They are
+and to set the display timings. Real VBIOS images are copyrighted and are
 **not** part of this repository.
 
 Instead, `scripts/atombios/mkrom.py` builds a synthetic ROM from the public
@@ -403,16 +403,16 @@ how to report bugs, and how to send changes.
 
 ## Licensing
 
-The device model, patches, and scripts use the GNU General Public License,
-version 2 or (at your option) any later version. QEMU uses the same license
-(see `COPYING`). The sources give attribution for register definitions from
-the Linux kernel (GPL) and Mesa (MIT).
+The device model, patches, and scripts are licensed under the GNU General
+Public License, version 2 or (at your option) any later version. QEMU is
+licensed under the same terms (see `COPYING`). The sources credit the Linux
+kernel (GPL) and Mesa (MIT) for the register definitions taken from them.
 
 `make-opencore.sh` downloads OpenCore (BSD license) from its official release
 page and checks its SHA-256. `build-ovmf.sh` gets edk2 (BSD-2-Clause-Patent).
 This repository does not redistribute either of them.
 
-This repository does not contain these items, and you must not add them:
+This repository does not contain these items. Do not add them:
 
 - VBIOS images of real cards.
 - CP microcode.
@@ -420,8 +420,9 @@ This repository does not contain these items, and you must not add them:
 - The Apple SMC key.
 - Apple software of any type.
 
-The license of Mac OS X 10.6 permits it to run in a virtual machine only for
-Mac OS X Server. You are responsible for the license for your use.
+Apple's license for Mac OS X 10.6 permits running it in a virtual machine
+only for Mac OS X Server. You are responsible for having a license that covers
+your use.
 
 ATI and Radeon are trademarks of Advanced Micro Devices. Mac OS X, Quartz, and
 Core Image are trademarks of Apple. This project is not affiliated with either
@@ -429,13 +430,13 @@ company.
 
 ## Disclaimer
 
-We prepared this project, its code, and its documentation with the help of AI
+We made this project, its code, and its documentation with help from AI
 tools. We tested it as the commit messages describe, but it can still contain
 errors.
 
-We supply it **as is**, without warranty of any kind, express or implied,
+We provide it **"as is,"** without warranty of any kind, express or implied,
 including the warranties of merchantability and fitness for a particular
-purpose, as the GNU General Public License says (sections 11 and 12 of
-version 2). You use it at your own risk. The authors are not liable for any
-damage or data loss that comes from its use. This includes damage to virtual
+purpose. Sections 11 and 12 of the GNU General Public License, version 2, say
+the same. You use it at your own risk. The authors are not liable for any
+damage or data loss that results from its use, including damage to virtual
 machines, disk images, and host systems.

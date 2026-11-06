@@ -15,5 +15,5 @@
 - [ ] If the behavior changed, I updated the documentation.
 - [ ] This change does not contain VBIOS images, CP microcode, install media,
       the Apple SMC key, or Apple software.
-- [ ] My contribution uses the GPL-2.0-or-later license, the same as the
-      project.
+- [ ] I license my contribution under GPL-2.0-or-later, the same license as
+      the project.

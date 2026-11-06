@@ -92,8 +92,8 @@ compares the GPU result with the CPU path.
 
 ## What we cannot accept
 
-You must never add these items to the repository. This includes tests,
-patches, and attachments to issues:
+Never add these items to the repository, including in tests, patches, and
+attachments to issues:
 
 - VBIOS images of real cards, or CP microcode
 - Operating system install media or disk images
@@ -104,7 +104,8 @@ For this reason, the option ROM in this repository is synthetic and clean-room.
 
 ## License
 
-When you contribute, you agree that your contribution uses the GNU General
+By contributing, you agree to license your contribution under the GNU General
 Public License, version 2 or (at your option) any later version. The project
-and QEMU use the same license (see `COPYING`). If you use code from other
-projects, keep its attribution and make sure that its license is compatible.
+and QEMU are licensed under the same terms (see `COPYING`). If you use code
+from another project, keep its attribution and make sure that its license is
+compatible.

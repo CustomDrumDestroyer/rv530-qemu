@@ -15,9 +15,9 @@ items:
 
 - **A Mac OS X 10.6 install DVD** image (`.iso`, or the raw HFS+ volume from
   the DVD). Optionally, the **10.6.8 Combo Update** from Apple.
-  - The license of the Mac OS X 10.6 client does not permit it to run in a
-    virtual machine. The license of Mac OS X Server 10.6 permits this. Make
-    sure that you have a license for your use.
+  - Apple's license for the Mac OS X 10.6 client does not permit running it
+    in a virtual machine. Its license for Mac OS X Server 10.6 does. Make sure
+    that you have a license that covers your use.
 - **The SMC key** (`OSK`) that the QEMU `isa-applesmc` device gives to the
   guest. This is a string from Apple. The repository does not contain it. You
   must get it yourself. You can read it from the SMC of a real Mac.

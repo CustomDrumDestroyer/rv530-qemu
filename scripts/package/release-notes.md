@@ -35,5 +35,5 @@ Vulkan backend on the GPU of an Intel Mac.
 
 `THIRD-PARTY-NOTICES.md` in each package lists the bundled libraries and their
 licenses. The release also contains the QEMU source of the packages
-(`qemu-11.1.3.tar.xz`) and this repository at the tag. We supply this project
-as is, without warranty. See the Disclaimer in the README.
+(`qemu-11.1.3.tar.xz`) and this repository at the tag. We provide this project
+"as is," without warranty. See the Disclaimer in the README.

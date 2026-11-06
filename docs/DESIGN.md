@@ -652,9 +652,9 @@ Snow Leopard black-box phase.
 - **Coherency bugs** cause corruption that occurs only sometimes and is
   difficult to make occur again. Mitigation: start with eager write-back, and
   keep it as a debug switch.
-- **Licensing**: never distribute a VBIOS dump or Apple binaries. The license
-  of the Snow Leopard client does not permit virtualization. The license of
-  Snow Leopard Server permits it.
+- **Licensing**: never distribute a VBIOS dump or Apple binaries. Apple's
+  license for the Snow Leopard client does not permit virtualization. Its
+  license for Snow Leopard Server does.
 
 **Open questions**
 
