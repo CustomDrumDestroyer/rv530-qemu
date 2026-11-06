@@ -1,45 +1,48 @@
 # Snow Leopard on the emulated X1600
 
-Everything needed to run Mac OS X 10.6 (Snow Leopard) as a QEMU guest on the
-`rv530` device, with Quartz Extreme and Core Image on the emulated GPU, on an
-x86_64 Linux host (KVM), an Intel Mac (Hypervisor.framework), or an Apple
-silicon Mac (TCG).
+This directory contains all the parts that you need to run Mac OS X 10.6
+(Snow Leopard) as a QEMU guest on the `rv530` device. Quartz Extreme and Core
+Image run on the emulated GPU. The host can be:
 
-## What you provide
+- x86_64 Linux (KVM)
+- An Intel Mac (Hypervisor.framework)
+- An Apple silicon Mac (TCG)
 
-This repository contains no Apple software and no Apple keys. You need:
+## What you supply
 
-- **A Mac OS X 10.6 install DVD** image (`.iso`, or the raw HFS+ volume
-  extracted from it), and optionally the **10.6.8 Combo Update** from Apple.
-  The Mac OS X 10.6 client license does not permit running it in a virtual
-  machine; Mac OS X Server 10.6's license does. Make sure your use is
-  licensed.
-- **The SMC key** (`OSK`) that QEMU's `isa-applesmc` presents to the guest.
-  This is Apple's string; it is not included, and you must obtain it
-  yourself (it can be read from a real Mac's SMC).
-- A host: x86_64 Linux with KVM, or a Mac (the top-level `README.md`'s
-  "macOS hosts"), and, for acceleration, a Vulkan 1.3 GPU (MoltenVK on a
-  Mac).
+This repository does not contain Apple software or Apple keys. You need these
+items:
+
+- **A Mac OS X 10.6 install DVD** image (`.iso`, or the raw HFS+ volume from
+  the DVD). Optionally, the **10.6.8 Combo Update** from Apple.
+  - The license of the Mac OS X 10.6 client does not permit it to run in a
+    virtual machine. The license of Mac OS X Server 10.6 permits this. Make
+    sure that you have a license for your use.
+- **The SMC key** (`OSK`) that the QEMU `isa-applesmc` device gives to the
+  guest. This is a string from Apple. The repository does not contain it. You
+  must get it yourself. You can read it from the SMC of a real Mac.
+- A host: x86_64 Linux with KVM, or a Mac (see "macOS hosts" in the top-level
+  `README.md`). For acceleration, a Vulkan 1.3 GPU (MoltenVK on a Mac).
 
 ## Files
 
 | Path | What it is |
 | --- | --- |
-| `sl-vm.sh` | The VM launcher: q35 + OVMF + OpenCore, the rv530 behind a `pci-bridge` at 00:01.0, USB keyboard and tablet, e1000 with an ssh port forward. The accelerator comes from `host.sh`: KVM on x86_64 Linux, Hypervisor.framework on an Intel Mac, multi-threaded TCG elsewhere (explicit core topology and a 1.2 GHz TSC, 2 GB by default; `ACCEL`, `TSC_HZ`). `DISPLAY_MODE=rv530` (the emulated X1600 as the only GPU), `std` (`-vga std`, for installation), or `both`. All options are listed at the top of the script. |
-| `host.sh` | Picks the accelerator for `sl-vm.sh` and `make-opencore.sh` (`kvm`, `hvf`, or `tcg`). |
-| `build-ovmf.sh` | Builds OVMF (edk2) with the memory protections that Snow Leopard's `boot.efi` trips over turned off, the `Rv530GopDxe` driver built in, and no TianoCore logo (`OVMF_LOGO=1` keeps it). On macOS it cross-builds with `x86_64-elf-gcc` (Homebrew's on Apple silicon, MacPorts' on an Intel Mac). Output: `work/fw/OVMF_CODE.fd`, `work/fw/OVMF_VARS.fd`. |
-| `Rv530GopDxe/` | Firmware graphics driver for the card: a single-mode GOP over the card's scanout, so the firmware, OpenCore, and `boot.efi` can draw before the ATI kexts load. |
-| `make-opencore.sh` | Builds the OpenCore boot volume (downloads and verifies OpenCore 1.0.8 when not given a zip): the `ATY,Wormy` framebuffer properties for the card, iMac8,1 SMBIOS with placeholder serials and a random UUID, an ACPI patch for QEMU's RTC resource, and `QemuTabletFix.kext`. Where the guest runs under TCG it adds two kernel patches that make 10.6's lock waits unbounded and a 2 s `slto_us` (`SL_TCG`, `SL_SLTO`; at most 2147483, above which 10.6 panics with "clear_wait_internal: deadlock"). No boot picker unless `SL_PICKER=1`; verbose boot with `SL_VERBOSE=1`. Output: `work/esp/` and `work/esp.img`. |
-| `make-installer.py` | Turns an install DVD image (`.dmg`, through `hdiutil` on macOS or `dmg2img` on Linux, or a raw image) into the disk `sl-vm.sh` attaches with `INSTALL=1`: a bare HFS+ volume is wrapped in a GPT disk, since XNU only mounts its root from a partition. |
-| `kexts/QemuTabletFix.kext` | Codeless kext that makes 10.6's HID driver use the full usb-tablet range, so the guest pointer follows the host pointer. |
-| `agent/` | `RV530Agent`, an optional guest-side helper: drag and drop between host and guest, text clipboard sync, and switching to the new resolution when the window is resized. `agent/install.sh` builds it with Xcode 3.2's gcc and installs it as a LaunchAgent. Without Xcode in the guest, `agent/build-host.sh` builds it on a macOS host (clang for 10.6; `unixthread.py` swaps the `LC_MAIN` today's ld writes for the `LC_UNIXTHREAD` 10.6's dyld needs) and `install.sh` installs that binary. |
-| `slctl.py` | Drives a running VM over QMP: screenshots, keys, typing, clicks, HMP commands, quit. |
-| `sl-ssh.sh` | ssh into the guest with the legacy algorithms its OpenSSH 5.2 needs (`SSHPORT`, `SL_USER`, `SL_KEY`). |
-| `tests/` | In-guest OpenGL and Core Image checks (`tests/README.md`). |
-| `work/` | Git-ignored: the system disk, the boot volume, OVMF builds, logs (`serial.log`, `qemu.log`, `vm.out`). Keep your SMC key here too, e.g., in `work/osk.env`, never in a tracked file. |
+| `sl-vm.sh` | The VM launcher: q35, OVMF, and OpenCore, with the rv530 behind a `pci-bridge` at 00:01.0, a USB keyboard and tablet, and an e1000 with an ssh port forward. `host.sh` selects the accelerator: KVM on x86_64 Linux, Hypervisor.framework on an Intel Mac, and multi-threaded TCG on other hosts (explicit core topology, a 1.2 GHz TSC, and 2 GB by default. See `ACCEL` and `TSC_HZ`). `DISPLAY_MODE=rv530` makes the emulated X1600 the only GPU. `DISPLAY_MODE=std` uses `-vga std`, for installation. `DISPLAY_MODE=both` uses both. The top of the script lists all options |
+| `host.sh` | Selects the accelerator for `sl-vm.sh` and `make-opencore.sh` (`kvm`, `hvf`, or `tcg`) |
+| `build-ovmf.sh` | Builds OVMF (edk2) with these changes: the memory protections that the Snow Leopard `boot.efi` cannot use are off, the `Rv530GopDxe` driver is built in, and there is no TianoCore logo (`OVMF_LOGO=1` keeps the logo). On macOS, it cross-builds with `x86_64-elf-gcc` (from Homebrew on Apple silicon, from MacPorts on an Intel Mac). Output: `work/fw/OVMF_CODE.fd` and `work/fw/OVMF_VARS.fd` |
+| `Rv530GopDxe/` | The firmware graphics driver for the card: a GOP with one mode over the scanout of the card. With it, the firmware, OpenCore, and `boot.efi` can draw before the ATI kexts load |
+| `make-opencore.sh` | Builds the OpenCore boot volume. If you do not give it a zip, it downloads OpenCore 1.0.8 and checks it. The boot volume contains: the `ATY,Wormy` framebuffer properties for the card, iMac8,1 SMBIOS with placeholder serials and a random UUID, an ACPI patch for the RTC resource of QEMU, and `QemuTabletFix.kext`. If the guest runs under TCG, the script also adds two kernel patches and a 2 s `slto_us` (`SL_TCG`, `SL_SLTO`). The kernel patches remove the time limits from the lock waits of 10.6. The maximum `SL_SLTO` is 2147483. Above it, 10.6 panics with "clear_wait_internal: deadlock". There is no boot picker unless you set `SL_PICKER=1`. For a verbose boot, set `SL_VERBOSE=1`. Output: `work/esp/` and `work/esp.img` |
+| `make-installer.py` | Makes the disk that `sl-vm.sh` attaches with `INSTALL=1`, from an install DVD image. The image can be a `.dmg` (it uses `hdiutil` on macOS or `dmg2img` on Linux) or a raw image. If the image is a bare HFS+ volume, the script puts it in a GPT disk, because XNU mounts its root only from a partition |
+| `kexts/QemuTabletFix.kext` | A kext without code. It makes the HID driver of 10.6 use the full range of the usb-tablet. Thus the guest pointer follows the host pointer |
+| `agent/` | `RV530Agent`, an optional helper in the guest. It does drag and drop between host and guest, text clipboard sync, and a change to the new resolution when you resize the window. `agent/install.sh` builds it with the gcc of Xcode 3.2 and installs it as a LaunchAgent. If the guest does not have Xcode, `agent/build-host.sh` builds it on a macOS host. It uses clang for 10.6, and `unixthread.py` replaces the `LC_MAIN` that the current ld writes with the `LC_UNIXTHREAD` that the dyld of 10.6 needs. Then `install.sh` installs that binary |
+| `slctl.py` | Controls a running VM through QMP: screenshots, keys, typing, clicks, HMP commands, and quit |
+| `sl-ssh.sh` | Opens ssh to the guest with the old algorithms that its OpenSSH 5.2 needs (`SSHPORT`, `SL_USER`, `SL_KEY`) |
+| `tests/` | OpenGL and Core Image checks in the guest (`tests/README.md`) |
+| `work/` | Git ignores this directory. It contains the system disk, the boot volume, the OVMF builds, and logs (`serial.log`, `qemu.log`, `vm.out`). Keep your SMC key here too, for example in `work/osk.env`. Never put it in a tracked file |
 
-The host side of drag and drop and clipboard sync is in `../scripts/dnd/`,
-and `../scripts/agent-update.sh` installs the agent over ssh.
+The host side of drag and drop and clipboard sync is in `../scripts/dnd/`.
+`../scripts/agent-update.sh` installs the agent through ssh.
 
 ## Setup
 
@@ -52,18 +55,18 @@ snowleopard/build-ovmf.sh               # -> snowleopard/work/fw/OVMF_CODE.fd
 SL_PICKER=1 snowleopard/make-opencore.sh   # with the boot picker, for installing
 ```
 
-`build-ovmf.sh` clones edk2 and takes a few minutes. It builds nasm and iasl
-itself if they are missing.
+`build-ovmf.sh` clones edk2. This takes some minutes. If nasm and iasl are not
+available, the script builds them.
 
-With a pre-built package from the repository's releases (top-level
-`README.md`, "Pre-built packages"), QEMU, OVMF and the option ROM are already
-built: run only `make-opencore.sh`, from the unpacked package, which needs
-python3, unzip, curl, dosfstools and mtools (on a Mac, Homebrew's or
-MacPorts' dosfstools and mtools).
+A pre-built package from the releases of the repository already contains
+QEMU, OVMF, and the option ROM (see "Pre-built packages" in the top-level
+`README.md`). With a package, run only `make-opencore.sh` from the unpacked
+package. It needs python3, unzip, curl, dosfstools, and mtools. On a Mac, use
+dosfstools and mtools from Homebrew or MacPorts.
 
 ### 2. Install Mac OS X
 
-Install on the standard VGA display first:
+First, install on the standard VGA display:
 
 ```
 cd snowleopard
@@ -71,20 +74,25 @@ export OSK='...'                        # the SMC key, see above
 INSTALL=1 INSTALLER=/path/to/SnowLeopard.iso DISPLAY_MODE=std QDISPLAY=gtk ./sl-vm.sh
 ```
 
-From a `.dmg`, make the installer disk first: `./make-installer.py
-/path/to/SnowLeopard.dmg` writes `work/installer.img`, which `INSTALL=1`
-attaches by default. On a Mac, use `QDISPLAY=cocoa` instead of `gtk`.
+If you have a `.dmg`, make the installer disk first: `./make-installer.py
+/path/to/SnowLeopard.dmg`. It writes `work/installer.img`. `INSTALL=1`
+attaches this file by default. On a Mac, use `QDISPLAY=cocoa` instead of
+`gtk`.
 
-The system disk `work/snowleopard.qcow2` (40 GB) is created on first start.
-In the OpenCore picker, choose the installer. In the installer, use Disk
-Utility to erase the QEMU disk as **Mac OS Extended (Journaled)** with a
-**GUID** partition map, then install. When it is done, start again without
-`INSTALL=1`, pick the installed system, and finish the setup assistant.
-Apply the 10.6.8 Combo Update if you have it.
+The first start makes the system disk `work/snowleopard.qcow2` (40 GB). Then
+do these steps:
 
-### 3. Switch to the emulated X1600
+1. In the OpenCore picker, select the installer.
+2. In the installer, open Disk Utility. Erase the QEMU disk as **Mac OS
+   Extended (Journaled)** with a **GUID** partition map.
+3. Install Mac OS X.
+4. When the installation is complete, start again without `INSTALL=1`.
+5. Select the installed system and complete the setup assistant.
+6. If you have the 10.6.8 Combo Update, apply it.
 
-Rebuild the boot volume without the picker, then start with the rv530 as
+### 3. Change to the emulated X1600
+
+Build the boot volume again without the picker. Then start with the rv530 as
 the only GPU:
 
 ```
@@ -93,37 +101,40 @@ cd snowleopard
 DISPLAY_MODE=rv530 QDISPLAY=gtk SMP=4 MEM=4096 ./sl-vm.sh
 ```
 
-The guest goes from a black screen to the Apple logo and the desktop.
-Apple's ATI X1000 drivers bind to the card through the device properties
-OpenCore injects; nothing is installed in the guest. System Profiler →
-Graphics/Displays lists an ATI Radeon X1600 with 256 MB. To check that the
-display is accelerated (Quartz Extreme), run this in Terminal; it prints `1`:
+The guest shows a black screen, then the Apple logo, then the desktop. The ATI
+X1000 drivers from Apple bind to the card through the device properties that
+OpenCore adds. You do not install anything in the guest. System Profiler →
+Graphics/Displays shows an ATI Radeon X1600 with 256 MB.
+
+To make sure that the display is accelerated (Quartz Extreme), run this
+command in Terminal. It prints `1`:
 
 ```
 python -c 'import Quartz; print Quartz.CGDisplayUsesOpenGLAcceleration(Quartz.CGMainDisplayID())'
 ```
 
-`snowleopard/tests/ci_blur_check.py` compares a Core Image blur on the GPU
-with the software renderer (expect `max diff 0`).
+`snowleopard/tests/ci_blur_check.py` compares a Core Image blur on the GPU with
+the software renderer. Expect `max diff 0`.
 
-### 4. Optional extras
+### 4. Optional items
 
 | Option | What it does |
 | --- | --- |
-| `SMP=N`, `MEM=MB` | vCPUs (default 4) and memory (default 4096). More vCPUs make the GPU much faster, because the command processor runs in the vCPU that submits the work. |
-| `XRES`, `YRES`, `XMAX`, `YMAX` | The EDID's preferred mode (default 1440x900) and largest mode (default 2560x1600) |
-| `REFRESH=Hz` | Refresh rate of the preferred mode (default 60, up to 240) |
-| `AUTORESIZE=1` | The guest resolution follows the QEMU window (with the agent installed). View → Resize Guest with Window (GTK or Cocoa) switches it at run time; with the Cocoa window it also turns on Zoom To Fit. |
-| `AUDIO=usb` | A USB audio output that Apple's AppleUSBAudio drives; the host side is Core Audio on a Mac and, on Linux, the first of PipeWire, PulseAudio, and ALSA that QEMU can load (a release package has PulseAudio, which works on PipeWire desktops with the PulseAudio client library, and ALSA). `AUDIO_BACKEND` picks another (pipewire, pa, alsa, sdl, coreaudio, or wav with `AUDIO_WAV`) |
+| `SMP=N`, `MEM=MB` | Number of vCPUs (default 4) and memory (default 4096). More vCPUs make the GPU much faster, because the command processor runs in the vCPU that sends the work |
+| `XRES`, `YRES`, `XMAX`, `YMAX` | The preferred mode of the EDID (default 1440x900) and its largest mode (default 2560x1600) |
+| `REFRESH=Hz` | The refresh rate of the preferred mode (default 60, maximum 240) |
+| `AUTORESIZE=1` | The guest resolution follows the QEMU window (needs the agent). View → Resize Guest with Window (GTK or Cocoa) changes this setting while the VM runs. With the Cocoa window, it also sets Zoom To Fit |
+| `AUDIO=usb` | A USB audio output that the AppleUSBAudio driver of Apple controls. On a Mac, the host side is Core Audio. On Linux, it is the first of PipeWire, PulseAudio, and ALSA that QEMU can load. A release package has PulseAudio and ALSA. PulseAudio works on PipeWire desktops that have the PulseAudio client library. `AUDIO_BACKEND` selects a different backend (pipewire, pa, alsa, sdl, coreaudio, or wav with `AUDIO_WAV`) |
 | `DND=1`, `CLIPBOARD=1` | Drag and drop and text clipboard sync with the agent (GTK window on Linux, Cocoa window on a Mac) |
-| `SSHPORT` | Host port forwarded to the guest's ssh (default 2222, on 127.0.0.1 only) |
-| `EXTRA` | Extra QEMU arguments |
+| `SSHPORT` | The host port that forwards to ssh in the guest (default 2222, only on 127.0.0.1) |
+| `EXTRA` | More QEMU arguments |
 
-**ssh into the guest.** Turn on Remote Login in System Preferences →
-Sharing, and add your public key to `~/.ssh/authorized_keys` in the guest
-(`sl-ssh.sh` uses `work/sl_key` by default). With more than one vCPU,
-launchd's on-demand sshd may fail to bind early in boot. Running sshd as a
-plain daemon instead is reliable. As root in the guest, disable the
+**ssh into the guest.** In the guest, turn on Remote Login in System
+Preferences → Sharing. Add your public key to `~/.ssh/authorized_keys` in the
+guest. By default, `sl-ssh.sh` uses `work/sl_key`.
+
+With more than one vCPU, the on-demand sshd of launchd can fail to bind early
+in the boot. A plain sshd daemon is reliable. As root in the guest, disable the
 on-demand service and add a LaunchDaemon:
 
 ```
@@ -144,28 +155,32 @@ EOF
 launchctl load -w /Library/LaunchDaemons/local.sshd.plist
 ```
 
-**The guest agent** needs Xcode 3.2 (on the install DVD, under Optional
-Installs) for its compiler. Then, from the host, run
-`scripts/agent-update.sh`, or in the guest run `agent/install.sh`.
+**The guest agent** needs Xcode 3.2 for its compiler. Xcode 3.2 is on the
+install DVD, under Optional Installs. Then run `scripts/agent-update.sh` on the
+host, or run `agent/install.sh` in the guest.
 
 ## Card identity
 
-The device presents itself as the iMac's Mobility Radeon X1600 (1002:71C5,
+The device shows itself as the Mobility Radeon X1600 of the iMac (1002:71C5,
 subsystem 106B:0080) with one DVI connector. It uses the synthetic,
-clean-room AtomBIOS from `scripts/atombios/mkrom.py`, so no VBIOS dump is
-needed. Apple's driver takes the card's identity from the `ATY,*` properties
-OpenCore injects. The SMBIOS model is iMac8,1, the oldest model whose
-`boot.efi` starts the 64-bit kernel on 10.6.0.
+clean-room AtomBIOS from `scripts/atombios/mkrom.py`. Thus you do not need a
+VBIOS dump. The Apple driver gets the identity of the card from the `ATY,*`
+properties that OpenCore adds.
+
+The SMBIOS model is iMac8,1. This is the oldest model whose `boot.efi` starts
+the 64-bit kernel on 10.6.0.
 
 ## Known issues
 
-- The command processor runs in the vCPU that submits the work. A long
-  batch, or a shader compiled for the first time, keeps that vCPU out of the
-  guest, and Mac OS X panics ("Unresponsive processor") when a vCPU misses a
-  TLB shootdown for 250 ms. The device keeps its runs well below that and
-  reports long ones (`RV530_STALL_MS`); a persistent shader cache
-  (`~/.cache/rv530`) removes most compile waits after the first run.
-- Brief audio dropouts can happen while applications launch, for the same
-  reason.
-- Sleep is disabled (S3/S4 off); shut down from the guest.
-- No snapshots or migration.
+- The command processor runs in the vCPU that sends the work. A long batch,
+  or a shader that compiles for the first time, keeps that vCPU out of the
+  guest. If a vCPU does not answer a TLB shootdown for 250 ms, Mac OS X panics
+  ("Unresponsive processor").
+  - The device keeps its runs much shorter than that. It reports long runs
+    (`RV530_STALL_MS`).
+  - A persistent shader cache (`~/.cache/rv530`) removes most compile waits
+    after the first run.
+- For the same reason, short audio dropouts can occur while applications
+  start.
+- Sleep is disabled (S3/S4 off). Shut down from the guest.
+- There are no snapshots and no migration.

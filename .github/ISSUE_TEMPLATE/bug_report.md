@@ -1,13 +1,13 @@
 ---
 name: Bug report
-about: Something crashes, renders wrong, or doesn't work
+about: Something crashes, renders incorrectly, or does not work
 labels: bug
 ---
 
-**What happened, and what did you expect?**
+**What occurred, and what did you expect?**
 
 
-**Steps to reproduce** (does it happen every time, or only sometimes?)
+**Steps to make it occur again** (does it occur each time, or only sometimes?)
 
 1.
 
@@ -20,15 +20,15 @@ labels: bug
 **Guest**
 
 - Mac OS X version (or Linux guest):
-- vCPU count and memory:
+- Number of vCPUs, and memory:
 - Command line or `sl-vm.sh` settings:
 
 **Logs and screenshots**
 
-Useful: `snowleopard/work/qemu.log`, the guest's panic report, and a screenshot.
-Please remove anything private first, such as your Apple SMC key, serial
-numbers, and home folder paths.
+Useful items: `snowleopard/work/qemu.log`, the panic report of the guest, and a
+screenshot. First, remove all private data, for example your Apple SMC key,
+serial numbers, and the paths of your home folder.
 
-**Did you narrow it down?** (optional)
+**Did you find the cause?** (optional)
 
-Does it still happen with `vulkan=off`, or with `SMP=1`?
+Does it still occur with `vulkan=off` or with `SMP=1`?

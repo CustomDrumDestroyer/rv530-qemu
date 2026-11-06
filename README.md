@@ -1,28 +1,34 @@
 # rv530-qemu: Mac OS X Snow Leopard with GPU acceleration in QEMU
 
 Run Mac OS X 10.6 (Snow Leopard) in a QEMU virtual machine with
-**Quartz Extreme and Core Image enabled**, without GPU passthrough.
+**Quartz Extreme and Core Image enabled**. You do not need GPU passthrough.
 
 **[Read the wiki](https://github.com/CustomDrumDestroyer/rv530-qemu/wiki)** for
 setup, installation, troubleshooting, and the FAQ.
 
-The key piece is `rv530`, a QEMU display device that emulates an ATI Radeon
-X1600 (RV530, R5xx family) closely enough for Apple's own, unmodified ATI
-X1000 drivers to bind to it, 3D acceleration included. Nothing is installed
-or patched in the guest. The command processor, 2D engine, vertex and
-fragment programs, texturing, and scanout are all emulated. The 3D engine
-has two implementations that share the same decoders:
+The main part is `rv530`, a QEMU display device. It emulates an ATI Radeon
+X1600 (RV530, R5xx family). The emulation is sufficiently accurate for the
+Apple ATI X1000 drivers to bind to it, with 3D acceleration. These drivers are
+not changed. You do not install or patch anything in the guest.
 
-- a **Vulkan backend** that runs rasterization, fragment programs,
-  texturing, blending, and depth/stencil on the host GPU, and
-- a **CPU reference path** (program interpreters and a software
-  rasterizer), which takes the draws the Vulkan backend cannot.
+The device emulates the command processor, the 2D engine, vertex and fragment
+programs, texturing, and scanout. The 3D engine has two implementations. They
+use the same decoders:
 
-Around the device, the repository has what a Snow Leopard VM needs: a
-firmware graphics driver for the card, an OVMF build script, an OpenCore
-boot-volume builder with the device properties Apple's driver expects, a
-launcher, and an optional guest agent for drag and drop, clipboard sync, and
-window-driven resizing.
+- A **Vulkan backend**. It does rasterization, fragment programs, texturing,
+  blending, and depth/stencil on the host GPU.
+- A **CPU reference path**. It has program interpreters and a software
+  rasterizer. It does the draws that the Vulkan backend cannot do.
+
+The repository also has the other parts that a Snow Leopard VM needs:
+
+- A firmware graphics driver for the card.
+- An OVMF build script.
+- An OpenCore boot-volume builder. It adds the device properties that the
+  Apple driver expects.
+- A launcher.
+- An optional guest agent for drag and drop, clipboard sync, and resizing of
+  the guest when you resize the window.
 
 ## Host support
 
@@ -40,72 +46,76 @@ In a Mac OS X 10.6.8 guest:
   Flow, Front Row) at up to 2560x1600.
 - **Graphics apps:** OpenGL (Chess, Grapher, screen savers), Core Image
   filters, Quartz Composer, and QuickTime video.
-- **Host integration:** sound, plus drag and drop, clipboard sync, and
-  window-driven resizing with the optional guest agent.
+- **Host integration:** sound. With the optional guest agent, also drag and
+  drop, clipboard sync, and resizing of the guest when you resize the window.
 - **Linux guests:** the in-kernel `radeon` driver (KMS, fbcon, X with EXA and
   3D compositing).
 
-Known bugs are tracked in
-[Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues).
-[Contributions are welcome](#contributing).
+The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
+lists the known bugs. [We welcome contributions](#contributing).
 
 ## Status
 
-This is a **proof of concept and a work in progress**: see
-[docs/STATUS.md](docs/STATUS.md) for per-module status and known gaps, and
-[docs/DESIGN.md](docs/DESIGN.md) for the original design.
+This project is a **proof of concept and a work in progress**.
 
-It was prepared with AI assistance and is provided as is, without warranty;
-see [Disclaimer](#disclaimer).
+- [docs/STATUS.md](docs/STATUS.md) gives the status of each module and the
+  known gaps.
+- [docs/DESIGN.md](docs/DESIGN.md) gives the original design.
+
+We prepared this project with AI tools. We supply it as is, without warranty.
+See [Disclaimer](#disclaimer).
 
 ![The Mac OS X 10.6 desktop on the emulated Radeon X1600, with the translucent menu bar and the 3D Dock](docs/img/snowleopard-desktop.png)
 
-The Mac OS X 10.6.7 desktop on the emulated X1600, composited by Quartz
-Extreme: the translucent menu bar and the reflective 3D Dock are drawn through
-the emulated GPU.
+The Mac OS X 10.6.7 desktop on the emulated X1600. Quartz Extreme composites
+the desktop. The emulated GPU draws the translucent menu bar and the reflective
+3D Dock.
 
 ## Quick start
 
-1. Download a pre-built package for x86_64 Linux, an Apple silicon Mac, or an
-   Intel Mac from the [Releases](../../releases) page (see Pre-built packages
-   below), or build QEMU with the device yourself: `scripts/setup-qemu.sh`
-   (see Building below).
-2. Follow [snowleopard/README.md](snowleopard/README.md): build OVMF (a
-   package already has it) and the OpenCore boot volume, install Mac OS X from
-   your own install media with your own SMC key, then start it with
-   `DISPLAY_MODE=rv530`.
+1. Get QEMU with the device. Use one of these two methods:
+   - Download a pre-built package for x86_64 Linux, an Apple silicon Mac, or
+     an Intel Mac from the [Releases](../../releases) page. See "Pre-built
+     packages" below.
+   - Build QEMU with the device yourself: `scripts/setup-qemu.sh`. See
+     "Building" below.
+2. Follow [snowleopard/README.md](snowleopard/README.md):
+   1. Build OVMF. A package already contains OVMF.
+   2. Build the OpenCore boot volume.
+   3. Install Mac OS X from your own install media, with your own SMC key.
+   4. Start Mac OS X with `DISPLAY_MODE=rv530`.
 
-No Apple software, Apple keys, or VBIOS images are included or needed from
-this repository.
+This repository does not contain Apple software, Apple keys, or VBIOS images.
+You do not need them from this repository.
 
 ## What is here
 
 | Path | Contents |
 | --- | --- |
-| `qemu/hw/display/rv530/` | The device model: a drop-in directory for QEMU 11.1.3 |
-| `qemu/patches/0001-build-glue-rv530.patch` | Build glue (meson, Kconfig). Builds the Vulkan backend when the `vulkan` and `shaderc` pkg-config packages are found, and the CPU path only otherwise |
-| `qemu/patches/0002-ui-input-last-abs.patch` | Lets a display device read the last absolute pointer position, which the device uses to recover the cursor hot spot |
+| `qemu/hw/display/rv530/` | The device model: a directory that you add to QEMU 11.1.3 |
+| `qemu/patches/0001-build-glue-rv530.patch` | Build glue (meson, Kconfig). Builds the Vulkan backend if the build finds the `vulkan` and `shaderc` pkg-config packages. If not, builds only the CPU path |
+| `qemu/patches/0002-ui-input-last-abs.patch` | Lets a display device read the last absolute pointer position. The device uses it to find the cursor hot spot |
 | `qemu/patches/0003-ui-gtk-dnd.patch` | GTK UI: drag and drop of files to and from the guest agent |
-| `qemu/patches/0004-ui-gtk-resize-toggle.patch` | GTK UI: **View → Resize Guest with Window** for devices with a run-time `auto-resize` property |
-| `qemu/patches/0005-tcg-tsc-macos.patch` | TCG on Apple silicon: a nanosecond host tick source and a TSC scaled by `tsc-frequency` |
-| `qemu/patches/0006-ui-cocoa-rv530.patch` | Cocoa UI (macOS hosts): drag and drop with the guest agent, View → Resize Guest with Window, window size in points |
-| `qemu/patches/0007-rv530-metal-check-macos.patch` | macOS hosts: builds `r5xx_vk_mac.m`, which checks the Metal devices before MoltenVK is loaded |
-| `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): page-aligns the dirty-log clear that std VGA makes unaligned, which QEMU 11.1.2 asserted on |
-| `qemu/patches/0009-tcg-notdirty-race.patch` | TCG: reads the dirty bits under the TLB lock when a TLB entry is installed or its `TLB_NOTDIRTY` is removed, so a concurrent dirty-log reset can't leave a vCPU writing a page without logging it |
-| `snowleopard/` | Everything for the Snow Leopard guest: launcher (with `host.sh`, which picks KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the card's GOP driver, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
-| `scripts/package/`, `.github/workflows/release.yml` | Builds the pre-built packages on GitHub Actions |
-| `scripts/setup-qemu.sh` | Fetches QEMU 11.1.3, installs the device, applies the patches, builds QEMU and the option ROM |
+| `qemu/patches/0004-ui-gtk-resize-toggle.patch` | GTK UI: **View → Resize Guest with Window** for devices that have a run-time `auto-resize` property |
+| `qemu/patches/0005-tcg-tsc-macos.patch` | TCG on Apple silicon: a host tick source in nanoseconds, and a TSC that `tsc-frequency` scales |
+| `qemu/patches/0006-ui-cocoa-rv530.patch` | Cocoa UI (macOS hosts): drag and drop with the guest agent, View → Resize Guest with Window, and window size in points |
+| `qemu/patches/0007-rv530-metal-check-macos.patch` | macOS hosts: builds `r5xx_vk_mac.m`, which checks the Metal devices before QEMU loads MoltenVK |
+| `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): aligns to pages the dirty-log clear that std VGA makes unaligned. QEMU 11.1.2 stopped on an assertion without it |
+| `qemu/patches/0009-tcg-notdirty-race.patch` | TCG: reads the dirty bits while it holds the TLB lock. It does this when it installs a TLB entry and when it removes `TLB_NOTDIRTY` from an entry. Thus a dirty-log reset at the same time cannot let a vCPU write a page without a log entry |
+| `snowleopard/` | All the parts for the Snow Leopard guest: launcher (with `host.sh`, which selects KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the GOP driver of the card, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, and in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
+| `scripts/package/`, `.github/workflows/release.yml` | Build the pre-built packages on GitHub Actions |
+| `scripts/setup-qemu.sh` | Gets QEMU 11.1.3, adds the device, applies the patches, and builds QEMU and the option ROM |
 | `scripts/atombios/mkrom.py` | Builds a synthetic, clean-room AtomBIOS option ROM for the device |
-| `scripts/dnd/`, `scripts/agent-update.sh` | Host side of drag and drop and clipboard sync; installs the guest agent over ssh |
-| `scripts/atomdis.py`, `scripts/regnames.py` | AtomBIOS command-table disassembler with register names (a debugging aid) |
-| `scripts/fetch-references.sh` | Fetches the public reference sources the code was written against (Linux `radeon` driver files, Mesa 24.0.9) |
-| `qemu/hw/display/rv530/tests/` | Unit tests: vertex programs (`pvs/`), fragment programs (`us/`), rasterizer (`raster/`), texture formats and sampling (`tex/`), and Vulkan-vs-CPU differential tests (`vk/`) |
-| `qemu/hw/display/rv530/tools/mesa-rc/` | Wraps Mesa's r300/r500 shader compiler as a command-line tool, used as ground truth for the shader decoders |
-| `docs/` | Design document, status, screenshots |
+| `scripts/dnd/`, `scripts/agent-update.sh` | The host side of drag and drop and clipboard sync. Installs the guest agent through ssh |
+| `scripts/atomdis.py`, `scripts/regnames.py` | A disassembler for AtomBIOS command tables, with register names (a tool for debugging) |
+| `scripts/fetch-references.sh` | Gets the public reference sources that we used to write the code (Linux `radeon` driver files, Mesa 24.0.9) |
+| `qemu/hw/display/rv530/tests/` | Unit tests: vertex programs (`pvs/`), fragment programs (`us/`), rasterizer (`raster/`), texture formats and sampling (`tex/`), and tests that compare Vulkan with the CPU path (`vk/`) |
+| `qemu/hw/display/rv530/tools/mesa-rc/` | Puts the Mesa r300/r500 shader compiler in a command-line tool. We use it as the reference for the shader decoders |
+| `docs/` | Design document, status, and screenshots |
 
 ## Pre-built packages
 
-Each [release](../../releases) has packages built by GitHub Actions
+GitHub Actions builds the packages for each [release](../../releases)
 (`.github/workflows/release.yml`):
 
 | Package | Host |
@@ -114,31 +124,45 @@ Each [release](../../releases) has packages built by GitHub Actions
 | `rv530-qemu-*-macos-arm64.tar.gz` | Apple silicon Macs |
 | `rv530-qemu-*-macos-x86_64.tar.gz` | Intel Macs |
 
-A package holds QEMU with the device (`bin/`, with the libraries it needs in
-`lib/` and, on macOS, MoltenVK), OVMF with the card's firmware driver
-(`firmware/`), the option ROM (`build-rom/`), and this repository's scripts
-and documentation; `snowleopard/sl-vm.sh` finds them there, so nothing needs
-to be built. `THIRD-PARTY-NOTICES.md` lists the bundled libraries and their
-licenses. The macOS packages are not notarized: after unpacking one, run
-`xattr -dr com.apple.quarantine rv530-qemu-*-macos-*` once so that
+A package contains these items:
+
+- QEMU with the device in `bin/`, and the libraries that QEMU needs in `lib/`.
+  On macOS, `lib/` also contains MoltenVK.
+- OVMF with the firmware driver of the card, in `firmware/`.
+- The option ROM, in `build-rom/`.
+- The scripts and documentation of this repository.
+
+`snowleopard/sl-vm.sh` finds these items in the package. Thus you do not need
+to build anything. `THIRD-PARTY-NOTICES.md` lists the bundled libraries and
+their licenses.
+
+The macOS packages are not notarized. After you unpack a macOS package, run
+`xattr -dr com.apple.quarantine rv530-qemu-*-macos-*` one time. Then
 Gatekeeper lets it run.
 
-To make a release, push a tag with the date, `vYYYY.MM.DD` (such as
-`v2026.11.02`, with a suffix like `.1` for a second release that day); running the workflow by hand
-(Actions > Release > Run workflow) builds the packages as artifacts only.
+To make a release, push a tag with the date: `vYYYY.MM.DD`, for example
+`v2026.11.02`. For a second release on the same day, add a suffix such as
+`.1`. You can also start the workflow manually (Actions > Release > Run
+workflow). A manual run builds the packages only as artifacts.
 
 ## Building
 
-Hosts: Linux x86_64 with KVM (the reference), or a Mac (see "macOS hosts"
-below). On Linux you need gcc, ninja, meson, python3, pkg-config, and the
-glib, pixman, GTK 3, and libslirp development packages. For the Vulkan
-backend you also need `libvulkan-dev` and `libshaderc-dev`, and a Vulkan 1.3
-GPU with `VK_EXT_external_memory_host` and fragment shader interlock; 64-bit
-floats are used when the GPU has them. It has been developed on NVIDIA
-hardware. Mesa's software
-Vulkan driver, lavapipe (`mesa-vulkan-drivers`), also has these features and
-passes the Vulkan tests below, which is useful on hosts without a GPU, but it
-is far too slow for a desktop guest.
+Hosts: Linux x86_64 with KVM (the reference host), or a Mac. For a Mac, see
+"macOS hosts" below.
+
+On Linux, you need these items:
+
+- gcc, ninja, meson, python3, and pkg-config.
+- The development packages for glib, pixman, GTK 3, and libslirp.
+- For the Vulkan backend: `libvulkan-dev` and `libshaderc-dev`.
+- For the Vulkan backend: a Vulkan 1.3 GPU with `VK_EXT_external_memory_host`
+  and fragment shader interlock. If the GPU has 64-bit floats, the backend
+  uses them.
+
+We developed the project on NVIDIA hardware. The Mesa software Vulkan driver,
+lavapipe (`mesa-vulkan-drivers`), also has these features. It passes the
+Vulkan tests below, which is useful on hosts without a GPU. But it is much too
+slow for a desktop guest.
 
 On Ubuntu 24.04:
 
@@ -149,17 +173,19 @@ sudo apt install build-essential ninja-build meson python3 pkg-config libglib2.0
 scripts/setup-qemu.sh
 ```
 
-This produces `build-qemu/qemu-11.1.3/build/qemu-system-x86_64` and the
+This command makes `build-qemu/qemu-11.1.3/build/qemu-system-x86_64` and the
 option ROM `build-rom/rv530-atombios.rom`.
 
 ### macOS hosts
 
-On an Intel Mac the guest runs under Hypervisor.framework, much as under
-KVM. On Apple silicon there is no hardware virtualization for x86 guests,
-so it runs under multi-threaded TCG, which is several times slower. Either
-way the fragment work goes to the Mac's GPU through MoltenVK.
-`snowleopard/host.sh` picks the accelerator, and `sl-vm.sh` and
-`make-opencore.sh` follow it.
+On an Intel Mac, the guest runs under Hypervisor.framework, similar to KVM.
+
+Apple silicon has no hardware virtualization for x86 guests. Thus the guest
+runs under multi-threaded TCG, which is several times slower.
+
+On both types of Mac, MoltenVK sends the fragment work to the GPU of the Mac.
+`snowleopard/host.sh` selects the accelerator. `sl-vm.sh` and
+`make-opencore.sh` use the accelerator that `host.sh` selects.
 
 Apple silicon, with Homebrew:
 
@@ -170,7 +196,8 @@ brew install ninja meson pkg-config glib pixman libslirp libpng sdl2 python@3.13
 scripts/setup-qemu.sh
 ```
 
-Intel Mac, with MacPorts (Homebrew's installer no longer runs on Intel Macs):
+Intel Mac, with MacPorts. The Homebrew installer does not run on Intel Macs
+now.
 
 ```
 sudo port install ninja meson pkgconfig glib2 libpixman libslirp libpng libsdl2 python313 \
@@ -179,52 +206,72 @@ sudo port install ninja meson pkgconfig glib2 libpixman libslirp libpng libsdl2 
 scripts/setup-qemu.sh
 ```
 
-Then follow [snowleopard/README.md](snowleopard/README.md) as on Linux, with
-`QDISPLAY=cocoa` for a window and `snowleopard/make-installer.py` to turn an
-install `.dmg` into the installer disk. The Cocoa window has the same drag
-and drop, clipboard sync, and View → Resize Guest with Window as the GTK one.
+Then follow [snowleopard/README.md](snowleopard/README.md), as on Linux, with
+these changes:
 
-What the scripts handle on a Mac:
+- Use `QDISPLAY=cocoa` to get a window.
+- Use `snowleopard/make-installer.py` to make the installer disk from an
+  install `.dmg`.
 
-- **Under TCG (Apple silicon):** an explicit core topology, a 1.2 GHz TSC
-  (`qemu/patches/0005`; at 1 GHz 10.6 panics building its commpage), 2 GB of
-  guest memory by default, and two OpenCore kernel patches that make 10.6's
-  spinlock and TLB-shootdown waits unbounded, since an emulated vCPU can be
-  held up for seconds. The lock timeout (`slto_us`) is 2 s: 10.6 keeps it
-  in a signed `int` in nanoseconds, so above about 2.1 s it goes negative
-  and the first wait-queue lock two vCPUs contend for panics with
-  "clear_wait_internal: deadlock".
-- **Under Hypervisor.framework (Intel):** the KVM CPU model without KVM's own
-  options, and `qemu/patches/0008`, without which QEMU stops on an assertion
-  as soon as 10.6's kernel takes over the std VGA display.
-- **MoltenVK:** Mac GPUs have no 64-bit floats, so depth is computed exactly
-  in 32-bit floats. MoltenVK can `abort()` while it probes a Metal device that
-  is not in `MTLGPUFamilyMac2`, such as the paravirtualized GPU of a macOS
-  virtual machine, so the Metal devices are checked first, and the device
-  falls back to the CPU path with a warning instead.
+The Cocoa window has the same drag and drop, clipboard sync, and View → Resize
+Guest with Window as the GTK window.
 
-Tested: on an Apple silicon Mac, and for Intel in an x86_64 macOS 15
-virtual machine with nested VT-x. In both, `CGDisplayUsesOpenGLAcceleration` is 1 and
-the Core Image blur check matches the software renderer exactly. The Intel
-test ran the 3D engine on the CPU path, because that virtual machine's Metal
-device cannot run MoltenVK; the Vulkan backend on an Intel Mac's own GPU has
-not been tested yet.
+The scripts do these tasks on a Mac:
+
+- **Under TCG (Apple silicon):**
+  - They set an explicit core topology.
+  - They set a 1.2 GHz TSC (`qemu/patches/0005`). At 1 GHz, 10.6 panics when
+    it builds its commpage.
+  - They give the guest 2 GB of memory by default.
+  - They add two OpenCore kernel patches. These patches remove the time
+    limits from the spinlock and TLB-shootdown waits of 10.6, because an
+    emulated vCPU can stop for some seconds.
+  - They set the lock timeout (`slto_us`) to 2 s. 10.6 keeps this value in
+    nanoseconds in a signed `int`. Above approximately 2.1 s, the value
+    becomes negative. Then 10.6 panics with "clear_wait_internal: deadlock"
+    at the first wait-queue lock that two vCPUs both try to get.
+- **Under Hypervisor.framework (Intel):**
+  - They use the KVM CPU model without the options that only KVM has.
+  - They use `qemu/patches/0008`. Without it, QEMU stops on an assertion when
+    the kernel of 10.6 starts to control the std VGA display.
+- **MoltenVK:**
+  - Mac GPUs have no 64-bit floats. Thus the device calculates depth exactly
+    with 32-bit floats.
+  - MoltenVK can call `abort()` while it examines a Metal device that is not
+    in `MTLGPUFamilyMac2`. An example is the paravirtualized GPU of a macOS
+    virtual machine. Thus the device checks the Metal devices first. If no
+    device is satisfactory, the device uses the CPU path and shows a warning.
+
+Tests:
+
+- We tested on an Apple silicon Mac.
+- We tested Intel in an x86_64 macOS 15 virtual machine with nested VT-x.
+- In both tests, `CGDisplayUsesOpenGLAcceleration` is 1. The Core Image blur
+  check gives exactly the same result as the software renderer.
+- The Intel test ran the 3D engine on the CPU path, because the Metal device
+  of that virtual machine cannot run MoltenVK. We did not test the Vulkan
+  backend on the GPU of an Intel Mac.
 
 ## The option ROM
 
-The card needs an AtomBIOS option ROM, which drivers use to look up the
-connectors and to program display timings. Real VBIOS images are copyrighted
-and are **not** part of this repository.
+The card needs an AtomBIOS option ROM. Drivers use it to find the connectors
+and to set the display timings. Real VBIOS images are copyrighted. They are
+**not** part of this repository.
 
 Instead, `scripts/atombios/mkrom.py` builds a synthetic ROM from the public
-`atombios.h` layouts. It has a FirmwareInfo table, one DVI-I connector on
-DDC1, and "paravirtual" command tables: each table hands its parameters to
-the device through a mailbox register block, and the device performs the
-operation in C (`r5xx_atom.c`). No VBIOS dump is needed.
+`atombios.h` layouts. The ROM has these parts:
+
+- A FirmwareInfo table.
+- One DVI-I connector on DDC1.
+- "Paravirtual" command tables. Each table gives its parameters to the device
+  through a mailbox register block. The device then does the operation in C
+  (`r5xx_atom.c`).
+
+You do not need a VBIOS dump.
 
 ## Running
 
-Minimal device options on a q35 machine (shown for a Linux guest):
+Minimum device options on a q35 machine, for a Linux guest:
 
 ```
 qemu-system-x86_64 -M q35 -accel kvm -m 4G -vga none \
@@ -233,14 +280,13 @@ qemu-system-x86_64 -M q35 -accel kvm -m 4G -vga none \
     -display gtk ...
 ```
 
-- **Mac OS X 10.6:** use `snowleopard/sl-vm.sh`, which sets up everything
-  else the guest needs (see [snowleopard/README.md](snowleopard/README.md)).
-  It places the card behind a conventional `pci-bridge`, because the guest
-  never services the interrupt of a PCIe root port that shares the card's
-  line.
-- **Linux guests:** put the card behind a `pcie-root-port` as shown, because
-  the `radeon` driver only uses the PCIe GART when the card is a PCIe
-  endpoint. It must be the only VGA device. The guest needs the R520 CP
+- **Mac OS X 10.6:** use `snowleopard/sl-vm.sh`. It sets all the other items
+  that the guest needs (see [snowleopard/README.md](snowleopard/README.md)).
+  It puts the card behind a conventional `pci-bridge`. The guest does not
+  service the interrupt of a PCIe root port that shares the line of the card.
+- **Linux guests:** put the card behind a `pcie-root-port`, as the example
+  shows. The `radeon` driver uses the PCIe GART only when the card is a PCIe
+  endpoint. The card must be the only VGA device. The guest needs the R520 CP
   microcode, `radeon/R520_cp.bin`, from the linux-firmware package.
 
 ### Device properties
@@ -250,38 +296,44 @@ qemu-system-x86_64 -M q35 -accel kvm -m 4G -vga none \
 | `romfile` | The option ROM (see above) |
 | `vram_size_mb` | VRAM size, 32 to 256 (default 256) |
 | `device-id`, `subsys-vendor-id`, `subsys-id`, `revision` | PCI identity (default 1002:71C5, subsystem 106B:0080) |
-| `xres`, `yres` | EDID preferred mode and the mode posted at reset |
-| `xmax`, `ymax` | Largest mode the EDID advertises (default 2560x1600, CVT reduced blanking) |
+| `xres`, `yres` | The preferred mode in the EDID, and the mode that the device sets at reset |
+| `xmax`, `ymax` | The largest mode that the EDID shows (default 2560x1600, CVT reduced blanking) |
 | `refresh` | Refresh rate of the preferred mode, in Hz (default 60) |
-| `resize` | Start with the guest resolution following the window. The run-time `auto-resize` property (`qom-set`) and the GTK View menu switch it while the VM runs |
-| `vulkan` | Host-GPU backend (default on; falls back to the CPU path with a warning when no suitable device exists) |
-| `vk-verify` | Also run GPU draws on the CPU path and trace mismatches (a debugging aid; slow) |
-| `cp-sync` | Run the command processor synchronously on ring writes (default on) |
-| `clipboard` | Chardev ID for text clipboard sync with the guest agent (`snowleopard/agent`) |
-| `debug` | Bit 0 logs unknown registers once each, bit 2 PM4 packets, bit 3 3D state |
+| `resize` | At start, the guest resolution follows the window. While the VM runs, the run-time `auto-resize` property (`qom-set`) and the GTK View menu change this setting |
+| `vulkan` | The host-GPU backend (default on). If no applicable device is available, the device uses the CPU path and shows a warning |
+| `vk-verify` | Also runs GPU draws on the CPU path and traces the differences (a tool for debugging, slow) |
+| `cp-sync` | Runs the command processor synchronously on ring writes (default on) |
+| `clipboard` | The chardev ID for text clipboard sync with the guest agent (`snowleopard/agent`) |
+| `debug` | Bit 0 logs each unknown register one time, bit 2 logs PM4 packets, and bit 3 logs 3D state |
 
 ### Environment variables
 
 | Variable | Meaning |
 | --- | --- |
-| `RV530_VK_DEVICE` | Pick a Vulkan device by index |
+| `RV530_VK_DEVICE` | Selects a Vulkan device by index |
 | `RV530_VK_CACHE_DIR` | Persistent shader cache (default `~/.cache/rv530`) |
-| `RV530_VK_STATS` | Print the GPU/CPU draw split every 2 s |
-| `RV530_VK_TRACE` | Log every Vulkan batch with its timing |
-| `RV530_VK_SYNC_COMPILE`, `RV530_VK_NO_MIRROR`, `RV530_VK_FLUSH_EACH`, `RV530_VK_NO_SYSRAM` | Debugging switches for the Vulkan backend (`RV530_VK_NO_SYSRAM`: textures and render targets in system memory go to the CPU path) |
-| `RV530_VK_CHECK_MIRROR` | `1` or `2`: check the device-local VRAM mirror against host VRAM, and report pages the guest changed without the dirty log seeing them and bytes the write-back reverted |
-| `RV530_VK_WB_COPY`, `RV530_VK_WB_STATS` | Write-back: copy whole row bands back from the mirror, as before the merged write-back; or report the bytes it kept |
-| `RV530_NO_UNLOCK` | Never release QEMU's global lock while the device waits (a debugging switch) |
-| `RV530_CPU_THREADS` | Size of the CPU rasterizer's worker pool |
-| `RV530_STALL_MS` | Report device work that holds QEMU's global lock longer than this (default 100), with a per-phase breakdown |
-| `RV530_DUMP_DIR` | Directory for per-draw dumps (with the `rv530_dump` trace event) |
+| `RV530_VK_STATS` | Prints the GPU/CPU split of the draws every 2 s |
+| `RV530_VK_TRACE` | Logs each Vulkan batch with its timing |
+| `RV530_VK_SYNC_COMPILE`, `RV530_VK_NO_MIRROR`, `RV530_VK_FLUSH_EACH`, `RV530_VK_NO_SYSRAM` | Debugging switches for the Vulkan backend. With `RV530_VK_NO_SYSRAM`, the CPU path does the textures and render targets that are in system memory |
+| `RV530_VK_CHECK_MIRROR` | `1` or `2`: compares the device-local VRAM mirror with host VRAM. Reports pages that the guest changed without a dirty-log entry, and bytes that the write-back changed back |
+| `RV530_VK_WB_COPY`, `RV530_VK_WB_STATS` | Write-back: copy full row bands back from the mirror, as before the merged write-back. Or report the bytes that the write-back kept |
+| `RV530_NO_UNLOCK` | The device never releases the global lock of QEMU while it waits (a debugging switch) |
+| `RV530_CPU_THREADS` | The number of workers for the CPU rasterizer |
+| `RV530_STALL_MS` | Reports device work that holds the global lock of QEMU for more than this time (default 100), with the time for each phase |
+| `RV530_DUMP_DIR` | Directory for a dump of each draw (with the `rv530_dump` trace event) |
 
 ### Tracing
 
-`-trace 'rv530_*'` logs MMIO accesses with register names, PM4 packets, GART
-programming, scanout mode changes, CPU-path fallbacks (`rv530_vk_fallback`,
-with the reason), and more. `-d guest_errors,unimp` lists GPU address faults
-and unhandled registers, each once.
+`-trace 'rv530_*'` logs these items, and more:
+
+- MMIO accesses, with register names.
+- PM4 packets.
+- GART programming.
+- Changes of the scanout mode.
+- Draws that go to the CPU path (`rv530_vk_fallback`), with the reason.
+
+`-d guest_errors,unimp` lists GPU address faults and registers that the device
+does not handle. It lists each one only one time.
 
 ## Tests
 
@@ -294,13 +346,13 @@ make -C qemu/hw/display/rv530/tests/vk && RV530_VK_SYNC_COMPILE=1 qemu/hw/displa
 ```
 
 Some test steps use the reference sources from `scripts/fetch-references.sh`.
-On macOS, build the tests with `CC=clang`; `tests/vk` skips, saying why, when
-no Metal device can run MoltenVK.
+On macOS, build the tests with `CC=clang`. If no Metal device can run
+MoltenVK, `tests/vk` does not run its tests and shows the reason.
 
 ## Screenshots
 
-All taken from a Mac OS X 10.6.8 guest on the Vulkan backend, except the
-first two, which come from the Linux guest.
+All screenshots come from a Mac OS X 10.6.8 guest on the Vulkan backend. The
+first two screenshots are the exceptions: they come from the Linux guest.
 
 ![Linux fbcon on the emulated card](docs/img/fbcon-dvi-1280x800.png)
 
@@ -308,22 +360,22 @@ Linux `radeon` KMS with fbcon.
 
 ![X with EXA](docs/img/x-exa-dvi.png)
 
-X with the radeon driver's EXA acceleration.
+X with the EXA acceleration of the radeon driver.
 
 ![Chess: lit, depth-tested 3D pieces from Apple's fixed-function vertex programs](docs/img/snowleopard-qe-chess.png)
 
-Chess: lit, depth-tested 3D pieces from Apple's fixed-function vertex
-programs.
+Chess: 3D pieces with lighting and depth test, from the fixed-function vertex
+programs of Apple.
 
 ![Grapher's lit 3D Toroid at 2560x1600](docs/img/snowleopard-2560-qe-grapher.png)
 
-Grapher's Toroid example at 2560 x 1600: a lit, depth-tested parametric
-surface.
+The Toroid example of Grapher at 2560 x 1600: a parametric surface with
+lighting and depth test.
 
 ![Quartz Composer playing Arabesque](docs/img/snowleopard-qc-arabesque.png)
 
-Quartz Composer playing the Arabesque composition (Core Image feedback and
-blur) at about 20 frames per second.
+Quartz Composer plays the Arabesque composition (Core Image feedback and blur)
+at approximately 20 frames per second.
 
 ![Flurry screen saver](docs/img/snowleopard-gl-flurry.png)
 
@@ -331,51 +383,59 @@ The Flurry screen saver (OpenGL, full screen).
 
 ![Front Row](docs/img/snowleopard-qe-frontrow.png)
 
-Front Row's full-screen menu.
+The full-screen menu of Front Row.
 
 ![QuickTime Player](docs/img/snowleopard-use-quicktime.png)
 
-QuickTime Player X playing Apple's sample movie; Core Video presents the
+QuickTime Player X plays the sample movie from Apple. Core Video shows the
 frames through OpenGL as Y'CbCr textures.
 
 ## Contributing
 
-Contributions are welcome: fork the repository and open a pull request. Help is
-especially welcome with:
+We welcome contributions. Fork the repository and open a pull request. We
+especially want help with these items:
 
-1. **Better macOS and Apple silicon host support**
-2. **Windows host support**, which doesn't exist yet
+1. **Better support for macOS and Apple silicon hosts**
+2. **Support for Windows hosts**, which does not exist now
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has starting points for both, how to report
-bugs, and how to submit changes.
+[CONTRIBUTING.md](CONTRIBUTING.md) tells you where to start on these two items,
+how to report bugs, and how to send changes.
 
 ## Licensing
 
-The device model, patches, and scripts are licensed under the GNU General
-Public License, version 2 or (at your option) any later version, the same
-as QEMU (see `COPYING`). Register definitions taken from the Linux kernel
-(GPL) and Mesa (MIT) carry attribution in the sources.
+The device model, patches, and scripts use the GNU General Public License,
+version 2 or (at your option) any later version. QEMU uses the same license
+(see `COPYING`). The sources give attribution for register definitions from
+the Linux kernel (GPL) and Mesa (MIT).
 
-`make-opencore.sh` downloads OpenCore (BSD license) from its official
-release page and checks its SHA-256; `build-ovmf.sh` fetches edk2
-(BSD-2-Clause-Patent). Neither is redistributed here.
+`make-opencore.sh` downloads OpenCore (BSD license) from its official release
+page and checks its SHA-256. `build-ovmf.sh` gets edk2 (BSD-2-Clause-Patent).
+This repository does not redistribute either of them.
 
-Not included, and not to be added: VBIOS images of real cards, CP microcode,
-operating system install media or disk images, the Apple SMC key, and Apple
-software of any kind. Running Mac OS X 10.6 in a virtual machine is only
-licensed for Mac OS X Server; you are responsible for licensing your use. ATI and Radeon are trademarks of Advanced Micro Devices; Mac OS X,
-Quartz, and Core Image are trademarks of Apple. This project is not
-affiliated with either company.
+This repository does not contain these items, and you must not add them:
+
+- VBIOS images of real cards.
+- CP microcode.
+- Operating system install media or disk images.
+- The Apple SMC key.
+- Apple software of any type.
+
+The license of Mac OS X 10.6 permits it to run in a virtual machine only for
+Mac OS X Server. You are responsible for the license for your use.
+
+ATI and Radeon are trademarks of Advanced Micro Devices. Mac OS X, Quartz, and
+Core Image are trademarks of Apple. This project is not affiliated with either
+company.
 
 ## Disclaimer
 
-This project, its code, and its documentation were prepared with the
-assistance of AI tools. It has been tested as the commit messages describe,
-but it may still contain errors.
+We prepared this project, its code, and its documentation with the help of AI
+tools. We tested it as the commit messages describe, but it can still contain
+errors.
 
-It is provided **as is**, without warranty of any kind, express or implied,
+We supply it **as is**, without warranty of any kind, express or implied,
 including the warranties of merchantability and fitness for a particular
 purpose, as the GNU General Public License says (sections 11 and 12 of
-version 2). You use it at your own risk: the authors are not liable for any
-damage or data loss that comes from using it, including to virtual machines,
-disk images, or host systems.
+version 2). You use it at your own risk. The authors are not liable for any
+damage or data loss that comes from its use. This includes damage to virtual
+machines, disk images, and host systems.
