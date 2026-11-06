@@ -1734,6 +1734,65 @@ static void test_fog(void)
     CHECK(cb_pixel(1, 1) == 0xffffffffu, "fog off");
 }
 
+/*
+ * ZMASK depth clear: the clear fills runs of pixels that are contiguous in
+ * memory.  Compare it, byte for byte, with the per-pixel clear that a
+ * memory without map() gets, for linear, micro, macro, and micro+macro
+ * tiling, Z16 and Z24S8, and pitch and scissor sizes that end inside tiles.
+ */
+static void test_zmask_clear(void)
+{
+    static uint8_t ref[VRAM_SIZE];
+    static const uint32_t pitches[] = { 64, 96, 128, 200, 256 };
+    static const int widths[] = { 64, 37, 200, 1 };
+    static const int heights[] = { 64, 13, 3 };
+    R5xxMem saved = fm.mem;
+    unsigned fmt, macro, micro, pi, wi, hi;
+    int configs = 0;
+
+    cur_test = "zmask_clear";
+    for (fmt = 0; fmt <= 2; fmt += 2) {
+        for (macro = 0; macro < 2; macro++) {
+            for (micro = 0; micro < 3; micro++) {
+                for (pi = 0; pi < sizeof(pitches) / sizeof(pitches[0]); pi++) {
+                    for (wi = 0; wi < sizeof(widths) / sizeof(widths[0]); wi++) {
+                        for (hi = 0; hi < sizeof(heights) / sizeof(heights[0]); hi++) {
+                            uint32_t pitch = pitches[pi];
+                            int w = widths[wi], h = heights[hi];
+                            int off = 0;
+                            size_t span = (size_t)pitch * 256 * 4;
+                            setup_defaults(true);
+                            R.regs.zb_format = fmt;
+                            R.regs.zb_depthpitch = pitch | (macro << 16) | (micro << 17);
+                            R.regs.zb_depthoffset = GPU_BASE + ZB_OFF;
+                            R.regs.sc_scissors_tl = (uint32_t)off | ((uint32_t)off << 13);
+                            R.regs.sc_scissors_br = (uint32_t)(w - 1 + off) |
+                                                    ((uint32_t)(h - 1 + off) << 13);
+                            if (ZB_OFF + span > VRAM_SIZE) {
+                                span = VRAM_SIZE - ZB_OFF;
+                            }
+                            fm.mem = saved;
+                            fm.mem.map = NULL;
+                            memset(vram, 0x5a, sizeof(vram));
+                            r5xx_raster_zmask_clear(&R, 1000, 0x11223344u);
+                            memcpy(ref, vram, sizeof(vram));
+                            fm.mem = saved;
+                            memset(vram, 0x5a, sizeof(vram));
+                            r5xx_raster_zmask_clear(&R, 1000, 0x11223344u);
+                            CHECK(memcmp(ref, vram, sizeof(vram)) == 0,
+                                  "fmt %u macro %u micro %u pitch %u %dx%d differs",
+                                  fmt, macro, micro, pitch, w, h);
+                            configs++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fm.mem = saved;
+    CHECK(configs == 2 * 2 * 3 * 5 * 4 * 3, "configs %d", configs);
+}
+
 static void test_mem_fallback(void)
 {
     /* No map(): everything goes through read()/write(). */
@@ -1782,6 +1841,7 @@ int main(void)
     test_polygon_mode();
     test_fog();
     test_mem_fallback();
+    test_zmask_clear();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

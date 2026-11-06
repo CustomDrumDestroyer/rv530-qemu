@@ -374,6 +374,60 @@ static void test_sampling(void)
     check("mip nearest: LOD 0 is level 0", &v, 0, 0, 0, 1, 1e-6f);
 }
 
+/*
+ * r5xx_surface_row_run: the pixels of each reported run must be contiguous in
+ * memory, for all tilings, micro modes, and bytes per pixel.
+ */
+static void test_row_run(void)
+{
+    static const uint32_t bpps[] = { 1, 2, 4, 8, 16 };
+    static const R5xxTiling tilings[] = { R5XX_TILE_LINEAR, R5XX_TILE_MICRO,
+                                          R5XX_TILE_MACRO, R5XX_TILE_MICRO_MACRO };
+    static const uint32_t widths[] = { 64, 96, 200, 256 };
+    unsigned bi, ti, mm, wi;
+
+    for (bi = 0; bi < 5; bi++) {
+        for (ti = 0; ti < 4; ti++) {
+            for (mm = 0; mm < 4; mm++) {
+                for (wi = 0; wi < 4; wi++) {
+                    R5xxSurfaceLayout l;
+                    uint32_t x, y, k, n;
+                    int ok = 1;
+                    char what[96];
+
+                    memset(&l, 0, sizeof(l));
+                    l.bpp = bpps[bi];
+                    l.tiling = tilings[ti];
+                    l.micro_mode = (uint8_t)mm;
+                    l.width = widths[wi];
+                    l.height = 32;
+                    l.pitch_bytes = widths[wi] * bpps[bi];
+                    for (y = 0; y < 32 && ok; y++) {
+                        for (x = 0; x < l.width && ok; x++) {
+                            uint32_t base = r5xx_surface_pixel_offset(&l, x, y);
+                            n = r5xx_surface_row_run(&l, x, y);
+                            if (n == 0) {
+                                ok = 0;
+                            }
+                            if (n > l.width - x) {
+                                n = l.width - x;
+                            }
+                            for (k = 1; k < n && ok; k++) {
+                                if (r5xx_surface_pixel_offset(&l, x + k, y) != base + k * l.bpp) {
+                                    ok = 0;
+                                }
+                            }
+                        }
+                    }
+                    snprintf(what, sizeof(what), "row run bpp %u tiling %u micro %u width %u",
+                             l.bpp, (unsigned)l.tiling, mm, l.width);
+                    check_true(what, ok);
+                }
+            }
+        }
+    }
+}
+
 int main(void)
 {
     mem = calloc(1, MEM_SIZE);
@@ -384,6 +438,7 @@ int main(void)
     test_formats();
     test_layout();
     test_sampling();
+    test_row_run();
     printf("tex_test: %d checks passed, %d failed\n", checks - failures, failures);
     return failures ? 1 : 0;
 }

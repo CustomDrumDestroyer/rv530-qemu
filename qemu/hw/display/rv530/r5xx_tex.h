@@ -54,6 +54,7 @@ static inline bool r5xx_addr_is_linear(uint32_t gpu_addr)
 }
 
 /* Byte offset of pixel (x, y) relative to gpu_addr, honoring tiling. */
+uint32_t r5xx_surface_row_run(const R5xxSurfaceLayout *l, uint32_t x, uint32_t y);
 uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
                                    uint32_t x, uint32_t y);
 

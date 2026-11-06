@@ -320,6 +320,32 @@ static void surf_write(const R5xxRaster *r, const R5xxSurfaceLayout *l,
     }
 }
 
+/* Write the 2- or 4-byte value to n pixels from (x, y) that are contiguous
+ * in memory (r5xx_surface_row_run): one map for the run, or per pixel if
+ * it does not map. */
+static void surf_fill_run(const R5xxRaster *r, const R5xxSurfaceLayout *l,
+                          uint32_t x, uint32_t y, uint32_t n, uint32_t value)
+{
+    const R5xxMem *m = r->mem;
+    uint32_t addr = l->gpu_addr + r5xx_surface_pixel_offset(l, x, y);
+    uint32_t len = n * l->bpp, i;
+    uint16_t v16 = (uint16_t)value;
+    uint8_t *p = m->map ? m->map(m->opaque, addr, len, true) : NULL;
+
+    if (!p) {
+        for (i = 0; i < n; i++) {
+            surf_write(r, l, x + i, y, l->bpp == 2 ? (const void *)&v16 : &value);
+        }
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        memcpy(p + i * l->bpp, l->bpp == 2 ? (const void *)&v16 : &value, l->bpp);
+    }
+    if (m->written) {
+        m->written(m->opaque, p, len);
+    }
+}
+
 /* Depth/stencil layout (Mesa: PIPE_FORMAT_S8_UINT_Z24_UNORM, util_pack_z):
  * Z24S8: depth in bits 8..31, stencil in bits 0..7.  Z16: 16-bit depth.
  * Values are little-endian in memory. */
@@ -1542,13 +1568,13 @@ void r5xx_raster_zmask_clear(R5xxRaster *r, uint32_t ndw, uint32_t value)
     }
     l.height = y1;
     for (y = 0; y < y1; y++) {
-        for (x = 0; x < x1; x++) {
-            if (l.bpp == 2) {
-                uint16_t v16 = (uint16_t)value;
-                surf_write(r, &l, x, y, &v16);
-            } else {
-                surf_write(r, &l, x, y, &value);
+        for (x = 0; x < x1; ) {
+            uint32_t n = r5xx_surface_row_run(&l, x, y);
+            if (n > (uint32_t)(x1 - x)) {
+                n = x1 - x;
             }
+            surf_fill_run(r, &l, x, y, n, value);
+            x += n;
         }
     }
 }

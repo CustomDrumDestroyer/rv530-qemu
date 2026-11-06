@@ -28,6 +28,14 @@ uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
            ((y & 1) * 2 + (x & 1)) * l->bpp;
 }
 
+uint32_t r5xx_surface_row_run(const R5xxSurfaceLayout *l, uint32_t x, uint32_t y)
+{
+    if (l->tiling == R5XX_TILE_LINEAR) {
+        return UINT32_MAX;
+    }
+    return 2 - (x & 1);         /* 2x2 blocks: two pixels of a row follow each other */
+}
+
 /* ---- color formats stub ------------------------------------------ */
 
 uint32_t r5xx_color_format_from_hw(uint32_t colorpitch, bool is_r500,

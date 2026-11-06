@@ -385,6 +385,43 @@ uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
     }
 }
 
+/*
+ * Number of pixels from (x, y) to the right, in the same row, whose bytes
+ * follow each other in memory: r5xx_surface_pixel_offset(l, x + k, y) ==
+ * r5xx_surface_pixel_offset(l, x, y) + k * bpp for k < the result.
+ * UINT32_MAX means to the end of the row.  Lets a fill handle a run with one
+ * address calculation and one map.
+ */
+uint32_t r5xx_surface_row_run(const R5xxSurfaceLayout *l, uint32_t x, uint32_t y)
+{
+    uint32_t bpp = l->bpp ? l->bpp : 1;
+    bool macro = l->tiling == R5XX_TILE_MACRO ||
+                 l->tiling == R5XX_TILE_MICRO_MACRO;
+    uint32_t micro = layout_micro_index(bpp, l->tiling, l->micro_mode);
+    uint32_t mw, mh, Mw, ix;
+
+    if (l->compressed || (!macro && micro == 0) ||
+        r5xx_addr_is_linear(l->gpu_addr)) {
+        return UINT32_MAX;
+    }
+    if (micro) {
+        mw = pixel_alignment(bpp, micro, false, 0);
+        mh = pixel_alignment(bpp, micro, false, 1);
+    } else {
+        mw = mh = 1;
+    }
+    if (!macro) {
+        /* micro tiles of one row follow each other in a row of tiles */
+        return mh == 1 ? UINT32_MAX : mw - x % mw;
+    }
+    Mw = pixel_alignment(bpp, micro, true, 0);
+    ix = x % Mw;
+    if (!micro || mh == 1) {
+        return Mw - ix;          /* to the end of this macro tile's row */
+    }
+    return mw - ix % mw;         /* to the end of this micro tile's row */
+}
+
 /* ------------------------------------------------------------------ */
 /* Texture format descriptors                                          */
 /* ------------------------------------------------------------------ */
