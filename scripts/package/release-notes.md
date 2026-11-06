@@ -9,12 +9,23 @@ repository.
 | `rv530-qemu-*-macos-arm64.tar.gz` | Apple silicon Macs (the guest runs under TCG) |
 | `rv530-qemu-*-macos-x86_64.tar.gz` | Intel Macs (the guest runs under Hypervisor.framework) |
 
-**Changes for Apple silicon (TCG):** a fix for stale window content and for
-"missed write" reports. These problems occurred with a display attached and
-several vCPUs (#4, #6). We tested the fix with a source build on one Apple
-silicon Mac. Three test runs had no missed writes and no stale rows. These
-issues stay open until other users confirm the fix. If you still see stale
-content, please report it in these issues.
+**Changes in this release:**
+
+- **Stale or mixed content in 3D and window drawing (#10, #11, #4).** An
+  upload to the GPU copy of VRAM read guest memory when the GPU ran the batch,
+  not when the guest sent the draw. If the guest changed a texture between two
+  draws of one batch, the earlier draw also used the new texels. Uploads now
+  copy from a snapshot that is taken when the draw is recorded. In our tests on
+  an Apple silicon Mac, Neverball, OpenArena, and Exposé showed no streaks,
+  strips, or tearing after this change.
+- **Fewer stalls under TCG (#12).** Polygon offset now draws on the GPU, not on
+  the CPU. The vertex shader interpreter and depth clears are faster. In
+  Neverball, one draw batch held the QEMU main lock for a maximum of 233 ms
+  before. Now the maximum is approximately 190 ms. Snow Leopard panics at
+  250 ms, so #12 stays open.
+
+We tested these changes with a source build on one Apple silicon Mac. If you
+see stale content, streaks, or long stalls, please report them.
 
 Unpack a package and follow `snowleopard/README.md` from step 2. `sl-vm.sh`
 uses the emulator, firmware, and option ROM of the package. Thus you do not
