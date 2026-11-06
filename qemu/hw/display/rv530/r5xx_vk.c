@@ -25,6 +25,8 @@
 /* pages a batch may render to and merge back: 32 MB, two 2560x1600
  * ARGB8888 surfaces */
 #define RVK_WB_PAGES       8192
+/* staging for the uploads of one batch (see stage_copies) */
+#define RVK_STAGE_BYTES    (64ull << 20)
 #define RVK_PAGE_MASK      ((1ull << RVK_PAGE_SHIFT) - 1)
 #define MIN_U64(a, b)      ((a) < (b) ? (a) : (b))
 
@@ -93,6 +95,14 @@ struct R5xxVk {
      * ranges the mirror is newer than host VRAM until the batch is read
      * back, so mid-batch uploads there skip those bytes */
     uint64_t *batch_wr;
+    /*
+     * Uploads to the mirror copy from 'stage', a snapshot of host VRAM taken
+     * when the copy is recorded.  A copy straight from host VRAM reads it
+     * when the GPU runs the batch: if the guest changed a texture between
+     * two draws of one batch, the earlier draw sampled the new texels too.
+     */
+    RvkBuf stage;
+    uint64_t stage_used;
     /*
      * Merged write-back.  Copying whole render bands back to host
      * VRAM reverted what other vCPUs wrote there while the batch ran (the
@@ -991,6 +1001,10 @@ R5xxVk *r5xx_vk_create(void *vram, uint64_t vram_size, R5xxVkDirtyFn dirty,
                 vk->mirror = true;
                 vk->stale = calloc(((vram_size >> RVK_PAGE_SHIFT) + 63) / 64, 8);
                 vk->batch_wr = calloc(((vram_size >> RVK_PAGE_SHIFT) + 63) / 64, 8);
+                if (!host_buf(vk, &vk->stage, RVK_STAGE_BYTES, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                              NULL, 0)) {
+                    vk->stage.map = NULL;   /* copy from host VRAM, as before */
+                }
                 if (!getenv("RV530_VK_WB_COPY") &&
                     readback_buf(vk, &vk->wb_before, (VkDeviceSize)RVK_WB_PAGES << RVK_PAGE_SHIFT) &&
                     readback_buf(vk, &vk->wb_after, (VkDeviceSize)RVK_WB_PAGES << RVK_PAGE_SHIFT)) {
@@ -1188,10 +1202,10 @@ void r5xx_vk_destroy(R5xxVk *vk)
         if (vk->layout) vkDestroyPipelineLayout(vk->dev, vk->layout, NULL);
         if (vk->dsl) vkDestroyDescriptorSetLayout(vk->dev, vk->dsl, NULL);
         {
-            RvkBuf *bufs[9] = { &vk->vram, &vk->draws, &vk->verts, &vk->counts,
-                                &vk->sysram, &vk->gart, &vk->vram_dev,
-                                &vk->wb_before, &vk->wb_after };
-            for (i = 0; i < 9; i++) {
+            RvkBuf *bufs[10] = { &vk->vram, &vk->draws, &vk->verts, &vk->counts,
+                                 &vk->sysram, &vk->gart, &vk->vram_dev,
+                                 &vk->wb_before, &vk->wb_after, &vk->stage };
+            for (i = 0; i < 10; i++) {
                 if (bufs[i]->buf) vkDestroyBuffer(vk->dev, bufs[i]->buf, NULL);
                 if (bufs[i]->mem) vkFreeMemory(vk->dev, bufs[i]->mem, NULL);
             }
@@ -1377,20 +1391,63 @@ static void shadow_copy(R5xxVk *vk, const VkBufferCopy *rg, uint32_t n)
         return;
     }
     for (i = 0; i < n; i++) {
-        memcpy(vk->shadow + rg[i].srcOffset, vk->vram_host + rg[i].srcOffset, rg[i].size);
+        memcpy(vk->shadow + rg[i].dstOffset, vk->vram_host + rg[i].dstOffset, rg[i].size);
     }
+}
+
+/*
+ * Snapshot the host VRAM of the upload regions in 'c' into the staging
+ * buffer now: their srcOffset becomes the staging offset.  Regions that do
+ * not fit move to 'live' and are copied from host VRAM, as before.
+ */
+static void copies_push(RvkCopies *c, uint64_t src, uint64_t dst, uint64_t len);
+
+static void stage_copies(R5xxVk *vk, RvkCopies *c, RvkCopies *live)
+{
+    uint32_t i, n = 0;
+
+    for (i = 0; i < c->n; i++) {
+        VkBufferCopy r = c->rg[i];
+        if (vk->stage.map && vk->stage_used + r.size <= vk->stage.size) {
+            memcpy((uint8_t *)vk->stage.map + vk->stage_used, vk->vram_host + r.dstOffset,
+                   r.size);
+            r.srcOffset = vk->stage_used;
+            vk->stage_used = (vk->stage_used + r.size + 15) & ~15ull;
+            c->rg[n++] = r;
+        } else {
+            copies_push(live, r.dstOffset, r.dstOffset, r.size);
+            c->bytes -= r.size;
+        }
+    }
+    c->n = n;
+}
+
+/* Record staged uploads 'st' and live uploads 'live' to the mirror */
+static void emit_copies(R5xxVk *vk, RvkCopies *st, RvkCopies *live)
+{
+    shadow_copy(vk, st->rg, st->n);
+    shadow_copy(vk, live->rg, live->n);
+    if (st->n) {
+        vkCmdCopyBuffer(vk->cmd, vk->stage.buf, vk->vram_dev.buf, st->n, st->rg);
+    }
+    if (live->n) {
+        vkCmdCopyBuffer(vk->cmd, vk->vram.buf, vk->vram_dev.buf, live->n, live->rg);
+    }
+    vk->stat_upload_bytes += st->bytes + live->bytes;
+    vk->b_up_bytes += st->bytes + live->bytes;
+    vk->b_up_n += st->n + live->n;
+    free(st->rg);
+    free(live->rg);
+    st->rg = live->rg = NULL;
+    st->n = live->n = 0;
 }
 
 static void record_copies(R5xxVk *vk, RvkCopies *c)
 {
-    shadow_copy(vk, c->rg, c->n);
-    if (c->n) {
-        vkCmdCopyBuffer(vk->cmd, vk->vram.buf, vk->vram_dev.buf, c->n, c->rg);
-        vk->stat_upload_bytes += c->bytes;
-        vk->b_up_bytes += c->bytes;
-        vk->b_up_n += c->n;
-    }
-    free(c->rg);
+    RvkCopies live = { 0 };
+
+    stage_copies(vk, c, &live);
+    emit_copies(vk, c, &live);
 }
 
 /*
@@ -1475,24 +1532,34 @@ static uint32_t wb_new_pages(R5xxVk *vk, const R5xxVkDrawReq *req)
  * already have a slot go to wb_before as well, so the merge does not take
  * the uploaded bytes for rendered ones.
  */
-static void wb_capture(R5xxVk *vk, const R5xxVkDrawReq *req, const RvkCopies *up,
-                       RvkCopies *cap, RvkCopies *upb)
+static void wb_upload_before(R5xxVk *vk, const RvkCopies *up, RvkCopies *upb)
 {
     uint32_t i;
-    int k;
 
     for (i = 0; i < up->n; i++) {
-        uint64_t a = up->rg[i].srcOffset, b = a + up->rg[i].size;
+        uint64_t a = up->rg[i].dstOffset, b = a + up->rg[i].size;
+        uint64_t src = up->rg[i].srcOffset - a;     /* staging or VRAM offset - VRAM offset */
         while (a < b) {
             uint64_t pg = a >> RVK_PAGE_SHIFT;
             uint64_t e = MIN_U64(b, (pg + 1) << RVK_PAGE_SHIFT);
             if (vk->wb_slot[pg]) {
-                copies_push(upb, a, ((uint64_t)(vk->wb_slot[pg] - 1) << RVK_PAGE_SHIFT) +
-                                    (a & RVK_PAGE_MASK), e - a);
+                copies_push(upb, src + a, ((uint64_t)(vk->wb_slot[pg] - 1) << RVK_PAGE_SHIFT) +
+                                          (a & RVK_PAGE_MASK), e - a);
             }
             a = e;
         }
     }
+}
+
+/* 'st' are staged uploads, 'live' uploads from host VRAM (stage_copies) */
+static void wb_capture(R5xxVk *vk, const R5xxVkDrawReq *req, const RvkCopies *st,
+                       const RvkCopies *live, RvkCopies *cap, RvkCopies *upb_st,
+                       RvkCopies *upb_live)
+{
+    int k;
+
+    wb_upload_before(vk, st, upb_st);
+    wb_upload_before(vk, live, upb_live);
     for (k = 0; k < req->ndirty; k++) {
         uint64_t off = req->dirty_off[k], len = req->dirty_len[k], pg, end;
         if (off >= vk->vram_size || !len) {
@@ -1520,7 +1587,7 @@ static void wb_capture(R5xxVk *vk, const R5xxVkDrawReq *req, const RvkCopies *up
 static void upload_for_draw(R5xxVk *vk, const R5xxVkDrawReq *req)
 {
     const RvkDraw *d = req->draw;
-    RvkCopies c = { 0 }, cap = { 0 }, upb = { 0 };
+    RvkCopies c = { 0 }, live = { 0 }, cap = { 0 }, upb = { 0 }, upb_live = { 0 };
     int i;
 
     if (!vk->mirror) {
@@ -1541,19 +1608,38 @@ static void upload_for_draw(R5xxVk *vk, const R5xxVkDrawReq *req)
             }
         }
     }
+    stage_copies(vk, &c, &live);
     if (vk->wb_merge) {
-        wb_capture(vk, req, &c, &cap, &upb);
+        wb_capture(vk, req, &c, &live, &cap, &upb, &upb_live);
     }
-    if (c.n || cap.n || upb.n) {
+    if (c.n || live.n || cap.n) {
         if (vk->rendering) {
             vkCmdEndRendering(vk->cmd);
             vk->rendering = false;
         }
-        if (upb.n) {
-            vkCmdCopyBuffer(vk->cmd, vk->vram.buf, vk->wb_before.buf, upb.n, upb.rg);
+        if (vk->ndraws) {
+            /*
+             * Earlier draws of this batch read and write VRAM through the
+             * mirror.  upload_barrier() orders these copies before the later
+             * draws only: without this barrier a copy can overwrite a page
+             * while an earlier draw still samples it.
+             */
+            VkMemoryBarrier mb = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+            };
+            vkCmdPipelineBarrier(vk->cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
         }
-        if (c.n) {
-            record_copies(vk, &c);
+        if (upb.n) {
+            vkCmdCopyBuffer(vk->cmd, vk->stage.buf, vk->wb_before.buf, upb.n, upb.rg);
+        }
+        if (upb_live.n) {
+            vkCmdCopyBuffer(vk->cmd, vk->vram.buf, vk->wb_before.buf, upb_live.n, upb_live.rg);
+        }
+        if (c.n || live.n) {
+            emit_copies(vk, &c, &live);
             if (cap.n) {
                 /* capture what was just uploaded */
                 VkMemoryBarrier mb = {
@@ -1564,19 +1650,18 @@ static void upload_for_draw(R5xxVk *vk, const R5xxVkDrawReq *req)
                 vkCmdPipelineBarrier(vk->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                      VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
             }
-        } else {
-            free(c.rg);
         }
         if (cap.n) {
             vkCmdCopyBuffer(vk->cmd, vk->vram_dev.buf, vk->wb_before.buf, cap.n, cap.rg);
         }
         upload_barrier(vk);
         begin_rendering(vk);
-    } else {
-        free(c.rg);
     }
+    free(c.rg);
+    free(live.rg);
     free(cap.rg);
     free(upb.rg);
+    free(upb_live.rg);
     for (i = 0; i < req->ndirty; i++) {
         if (req->dirty_off[i] < RVK_GART_SPACE) {
             batch_wr_mark(vk, req->dirty_off[i], req->dirty_len[i]);
@@ -1692,6 +1777,7 @@ static void begin_batch(R5xxVk *vk)
     vkBeginCommandBuffer(vk->cmd, &bi);
     if (vk->mirror) {
         memset(vk->batch_wr, 0, ((vk->vram_size >> RVK_PAGE_SHIFT) + 63) / 64 * 8);
+        vk->stage_used = 0;
         record_uploads(vk);
     }
     vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->layout,

@@ -760,6 +760,74 @@ static void scenario_kick(int trials)
 }
 
 /*
+ * The guest CPU changes a texture between two draws of one batch: the
+ * later draw needs the new texels, so the page is copied to the mirror
+ * mid-batch.  The earlier draws must still see the old texels: the copy
+ * must wait until they are done.
+ */
+static void scenario_midbatch_texture(int trials, int ndraws)
+{
+    char err[256];
+    static RvkVertex gv[64];
+    RvkDraw *draw = calloc(1, sizeof(RvkDraw));
+    R5xxVkDrawReq req;
+    int t, k, bad = 0;
+    uint64_t wrong_px = 0;
+
+    for (t = 0; t < trials; t++) {
+        uint8_t v1 = 0x20 + (t & 0x3f), v2 = 0xc0;
+        uint32_t x, y, wrong = 0;
+
+        raster_defaults();
+        R.regs.rb3d_colorpitch[0] = RT_W | (6u << 21);      /* linear */
+        tex_used = 0;
+        set_tex(0, TEX_OFF | 0xc, 0x8007a0e2, 0x0000a60c, 0x000000ff, 0x00000a92, 0);
+        load_prog(prog_composite, 2);
+        R.us.prog = dec;
+        memset(vram + TEX_OFF, v1, 1 << 20);
+        memset(vram + RT_OFF, 0, RT_W * RT_H * 4);
+        r5xx_vk_upload(vk, 0, VRAM_SIZE);
+        /* earlier draws: rows 64.., sample v1 */
+        ntris = 0;
+        add_quad(0, 64, RT_W, RT_H, 0.5f, r5xx_vec4_make(1, 1, 1, 1), 0, 0, 16, 16);
+        kick_draw(&req, draw, gv);
+        for (k = 0; k < ndraws; k++) {
+            if (!r5xx_vk_draw(vk, &req, err, sizeof(err))) {
+                printf("FAIL [mid-batch texture] vk draw: %s\n", err);
+                failures++;
+                free(draw);
+                return;
+            }
+        }
+        /* the CPU writes the texture; the dirty log reports it */
+        memset(vram + TEX_OFF, v2, 1 << 20);
+        r5xx_vk_upload(vk, TEX_OFF, 1 << 20);
+        /* a later draw: rows 0..15, samples v2 */
+        ntris = 0;
+        add_quad(0, 0, 16, 16, 0.5f, r5xx_vec4_make(1, 1, 1, 1), 0, 0, 16, 16);
+        kick_draw(&req, draw, gv);
+        r5xx_vk_draw(vk, &req, err, sizeof(err));
+        r5xx_vk_flush(vk);
+        for (y = 64; y < RT_H; y++) {
+            for (x = 0; x < RT_W; x++) {
+                wrong += vram[RT_OFF + (y * RT_W + x) * 4] != v1;
+            }
+        }
+        for (x = 0; x < 16; x++) {
+            wrong += vram[RT_OFF + (8 * RT_W + x) * 4] != v2;
+        }
+        bad += wrong != 0;
+        wrong_px += wrong;
+    }
+    printf("%s [mid-batch texture: %d trials of %d draws] wrong in %d trials, %llu pixels\n",
+           bad ? "FAIL" : "ok  ", trials, ndraws, bad, (unsigned long long)wrong_px);
+    if (bad) {
+        failures++;
+    }
+    free(draw);
+}
+
+/*
  * A guest CPU write while a batch is pending: another vCPU writes
  * VRAM inside the batch's render band (rows are rounded to 32 for the
  * write-back) but outside what the draw covers.  The write-back must not
@@ -1047,6 +1115,7 @@ int main(void)
     scenario_cpu_write_in_band();
     scenario_poly_offset();
     scenario_kick(getenv("RVK_KICK_TRIALS") ? atoi(getenv("RVK_KICK_TRIALS")) : 100);
+    scenario_midbatch_texture(getenv("RVK_MID_TRIALS") ? atoi(getenv("RVK_MID_TRIALS")) : 50, 64);
     scenario_order(getenv("RVK_ORDER_TRIALS") ? atoi(getenv("RVK_ORDER_TRIALS")) : 50, 32);
     if (getenv("RVK_BENCH")) {
         bench(200, false);
