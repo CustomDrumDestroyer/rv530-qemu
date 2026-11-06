@@ -403,12 +403,12 @@ static VkShaderModule compile(R5xxVk *vk, const char *src, shaderc_shader_kind k
 
 static const char *vert_src =
     "#version 460\n"
-    "struct Vtx { vec4 pos; float z; uint flatmask, front, pad; vec4 s[12]; vec4 f[12]; };\n"
+    "struct Vtx { vec4 pos; float z; uint flatmask, front; float zoff; vec4 s[12]; vec4 f[12]; };\n"
     "layout(std430, set = 0, binding = 2) readonly buffer VtxBuf { Vtx verts[]; };\n"
     "layout(push_constant) uniform PC { uint draw; } pc;\n"
     "layout(location = 0) out vec4 v_s[12];\n"
     "layout(location = 12) flat out vec4 v_f[12];\n"
-    "layout(location = 24) flat out uvec2 v_misc;\n"
+    "layout(location = 24) flat out uvec3 v_misc;\n"
     "layout(location = 25) noperspective out float v_z;\n"
     "void main() {\n"
     "  Vtx v = verts[gl_VertexIndex];\n"
@@ -416,7 +416,7 @@ static const char *vert_src =
     "  gl_Position = vec4((v.pos.x * (2.0 / 8192.0) - 1.0) * w,\n"
     "                     (v.pos.y * (2.0 / 8192.0) - 1.0) * w, 0.5 * w, w);\n"
     "  for (int i = 0; i < 12; i++) { v_s[i] = v.s[i]; v_f[i] = v.f[i]; }\n"
-    "  v_misc = uvec2(v.flatmask, v.front);\n"
+    "  v_misc = uvec3(v.flatmask, v.front, floatBitsToUint(v.zoff));\n"
     "  v_z = v.z;\n"
     "}\n";
 

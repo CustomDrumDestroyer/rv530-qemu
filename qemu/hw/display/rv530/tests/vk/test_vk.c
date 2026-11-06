@@ -408,6 +408,96 @@ static void scenario_depth_stencil(void)
     }
 }
 
+/*
+ * Polygon offset (decals, shadows): a sloped quad is drawn over a depth
+ * buffer that holds the same plane, with Z24S8 and Z16, and with a pull
+ * toward the viewer and a push away.  Only the offset decides which pixels
+ * pass, so the GPU must add exactly the offset that the CPU path adds.
+ * Depth values may differ by 1: the GPU interpolates the same plane up to
+ * 1 unit lower than the CPU path, also without an offset.
+ */
+static void po_case(const char *name, bool z16, float scale, float offset)
+{
+    union { float f; uint32_t u; } fs = { .f = scale }, fo = { .f = offset };
+    uint32_t i, bad = 0, zbytes = RT_W * RT_H * (z16 ? 2 : 4);
+    char label[96];
+
+    raster_defaults();
+    tex_used = 0;
+    fill_random(RT_OFF, RT_W * RT_H * 4);
+    R.regs.zb_format = z16 ? 0 : 2;                   /* Z16 or Z24S8 */
+    R.regs.zb_depthpitch = RT_W;                      /* linear */
+    R.regs.zb_depthoffset = Z_OFF;
+    R.regs.zb_cntl = 2u | 4u;                         /* z, z write */
+    R.regs.zb_zstencilcntl = 1;                       /* z LESS */
+    R.regs.su_poly_offset_enable = 3;                 /* front and back */
+    R.regs.su_poly_offset_front_scale = R.regs.su_poly_offset_back_scale = fs.u;
+    R.regs.su_poly_offset_front_offset = R.regs.su_poly_offset_back_offset = fo.u;
+    load_prog(prog_color, 1);
+    /* the depth buffer holds the plane: draw it once on the CPU path
+     * without offset, then keep that buffer for both runs */
+    memset(vram + Z_OFF, 0xff, zbytes);
+    R.regs.su_poly_offset_enable = 0;
+    R.regs.zb_zstencilcntl = 7;                       /* z ALWAYS */
+    ntris = 0;
+    {
+        R5xxVertex a = vtx(8, 8, 0.2f, 1.0f, r5xx_vec4_make(0, 0, 1, 1), r5xx_vec4_make(0, 0, 0, 1));
+        R5xxVertex b = vtx(248, 16, 0.7f, 1.0f, r5xx_vec4_make(0, 0, 1, 1), r5xx_vec4_make(0, 0, 0, 1));
+        R5xxVertex c = vtx(24, 248, 0.45f, 1.0f, r5xx_vec4_make(0, 0, 1, 1), r5xx_vec4_make(0, 0, 0, 1));
+        R5xxVertex d = vtx(240, 240, 0.95f, 1.0f, r5xx_vec4_make(0, 0, 1, 1), r5xx_vec4_make(0, 0, 0, 1));
+        char err[256];
+        add_tri(a, b, c);
+        add_tri(b, d, c);
+        r5xx_raster_setup(&R, err, sizeof(err));
+        for (i = 0; i < (uint32_t)ntris; i++) {
+            r5xx_raster_triangle(&R, &tris[i * 3], &tris[i * 3 + 1], &tris[i * 3 + 2]);
+        }
+        R.regs.su_poly_offset_enable = 3;
+        R.regs.zb_zstencilcntl = 1;                   /* z LESS */
+        ntris = 0;
+        a.attr[0].f[0] = b.attr[0].f[0] = c.attr[0].f[0] = d.attr[0].f[0] = 1;
+        a.attr[0].f[2] = b.attr[0].f[2] = c.attr[0].f[2] = d.attr[0].f[2] = 0;
+        add_tri(a, b, c);
+        add_tri(b, d, c);
+    }
+    snprintf(label, sizeof(label), "polygon offset %s %s", name, z16 ? "z16" : "z24");
+    run_and_compare(label, RT_OFF, RT_W * RT_H * 4, 0, 0);
+    {
+        uint32_t maxd = 0, first = UINT32_MAX, step = z16 ? 2 : 4;
+        for (i = 0; i < zbytes; i += step) {
+            uint32_t g = z16 ? (vram[Z_OFF + i] | vram[Z_OFF + i + 1] << 8)
+                             : (*(uint32_t *)&vram[Z_OFF + i] >> 8);
+            uint32_t c = z16 ? (cpu_out[Z_OFF + i] | cpu_out[Z_OFF + i + 1] << 8)
+                             : (*(uint32_t *)&cpu_out[Z_OFF + i] >> 8);
+            uint32_t d = g > c ? g - c : c - g;
+            if (d > 1) {               /* GPU depth can be 1 lower (see below) */
+                bad++;
+                if (first == UINT32_MAX) {
+                    first = i;
+                    if (getenv("RVK_PO_VERBOSE")) {
+                        printf("  first diff at pixel %u: gpu %06x cpu %06x\n", i / step, g, c);
+                    }
+                }
+                maxd = d > maxd ? d : maxd;
+            }
+        }
+        if (getenv("RVK_PO_VERBOSE")) {
+            printf("  %u depth values differ, max diff %u\n", bad, maxd);
+        }
+    }
+    printf("%s [%s zbuf] %u bytes differ\n", bad ? "FAIL" : "ok  ", label, bad);
+    if (bad) {
+        failures++;
+    }
+}
+
+static void scenario_poly_offset(void)
+{
+    po_case("pull", false, -1.0f * 12, -1.0f * 2);
+    po_case("pull", true, -1.0f * 12, -1.0f * 4);
+    po_case("units only", false, 0, -2.0f * 2);
+}
+
 static void scenario_565_mask(void)
 {
     raster_defaults();
@@ -955,6 +1045,7 @@ int main(void)
     scenario_uv88();
     scenario_fp16();
     scenario_cpu_write_in_band();
+    scenario_poly_offset();
     scenario_kick(getenv("RVK_KICK_TRIALS") ? atoi(getenv("RVK_KICK_TRIALS")) : 100);
     scenario_order(getenv("RVK_ORDER_TRIALS") ? atoi(getenv("RVK_ORDER_TRIALS")) : 50, 32);
     if (getenv("RVK_BENCH")) {

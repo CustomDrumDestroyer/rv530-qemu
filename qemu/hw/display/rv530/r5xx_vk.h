@@ -107,7 +107,8 @@ typedef struct RvkDraw {             /* 9088 bytes */
 typedef struct RvkVertex {           /* 416 bytes */
     float pos[4];                    /* window x, y, (unused), clip w */
     float z;                         /* window z (screen-linear) */
-    uint32_t flatmask, front, pad;
+    uint32_t flatmask, front;
+    float zoff;                      /* polygon offset, depth units */
     float smooth[RVK_MAX_INPUTS][4];
     float flat[RVK_MAX_INPUTS][4];   /* provoking vertex values */
 } RvkVertex;

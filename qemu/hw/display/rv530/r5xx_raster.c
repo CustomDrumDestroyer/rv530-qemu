@@ -1335,27 +1335,6 @@ static void raster_tri(R5xxRaster *r, Prim *p)
              (int)floordiv64(maxY - r->d.subpix / 2, r->d.subpix) + 1);
 }
 
-/* Polygon offset in float depth units for a triangle with the given
- * window-space vertices: GL's m*factor + r*units.  Mesa programs
- * SCALE = factor*12 and OFFSET = units*4 (Z16) / units*2 (Z24). */
-static double poly_offset(const R5xxRaster *r, const R5xxVertex *v0,
-                         const R5xxVertex *v1, const R5xxVertex *v2,
-                         float scale, float offset)
-{
-    double ax = v1->x - v0->x, ay = v1->y - v0->y, az = v1->z - v0->z;
-    double bx = v2->x - v0->x, by = v2->y - v0->y, bz = v2->z - v0->z;
-    double det = ax * by - ay * bx;
-    double dzdx, dzdy, m, unit;
-    if (det == 0) {
-        return 0;
-    }
-    dzdx = (az * by - bz * ay) / det;
-    dzdy = (ax * bz - bx * az) / det;
-    m = fabs(dzdx) > fabs(dzdy) ? fabs(dzdx) : fabs(dzdy);
-    unit = r->rt.z_is_16 ? (1.0 / 65535.0) / 4.0 : (1.0 / 16777215.0) / 2.0;
-    return m * scale / r->d.subpix + offset * unit;
-}
-
 static void raster_line_prim(R5xxRaster *r, Prim *p);
 static void raster_point_prim(R5xxRaster *r, Prim *p);
 
@@ -1386,9 +1365,9 @@ void r5xx_raster_triangle(R5xxRaster *r, const R5xxVertex *v0,
     p.v[2] = v2;
     p.front = front;
     if (front ? d->po_front : d->po_back) {
-        p.z_offset = poly_offset(r, v0, v1, v2,
-                                 front ? d->po_front_scale : d->po_back_scale,
-                                 front ? d->po_front_offset : d->po_back_offset);
+        p.z_offset = r5xx_raster_poly_offset(r, v0, v1, v2,
+                                             front ? d->po_front_scale : d->po_back_scale,
+                                             front ? d->po_front_offset : d->po_back_offset);
     }
 
     ptype = PTYPE_TRI;

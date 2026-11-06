@@ -286,6 +286,7 @@ int rvk_triangle(RvkVertex out[3], const R5xxRaster *r, const R5xxVertex *v0,
     const R5xxVertex *vs[3] = { v0, v1, v2 };
     double area;
     bool ccw, front;
+    float zoff = 0;
     int prov, i;
 
     area = ((double)v1->x - v0->x) * ((double)v2->y - v0->y) -
@@ -298,9 +299,6 @@ int rvk_triangle(RvkVertex out[3], const R5xxRaster *r, const R5xxVertex *v0,
     if (!nocull && ((front && d->cull_front) || (!front && d->cull_back))) {
         return 0;
     }
-    if (front ? d->po_front : d->po_back) {
-        return -1;                      /* polygon offset: CPU path */
-    }
     if (d->poly_mode_dual && (front ? d->poly_front_type : d->poly_back_type) != 2) {
         return -1;                      /* point/line fill mode */
     }
@@ -308,9 +306,15 @@ int rvk_triangle(RvkVertex out[3], const R5xxRaster *r, const R5xxVertex *v0,
     if (prov >= 3) {
         prov = 2;
     }
+    if (front ? d->po_front : d->po_back) {
+        zoff = (float)r5xx_raster_poly_offset(r, v0, v1, v2,
+                                              front ? d->po_front_scale : d->po_back_scale,
+                                              front ? d->po_front_offset : d->po_back_offset);
+    }
     for (i = 0; i < 3; i++) {
         put_vertex(&out[i], vs[i], vs[prov], r->flat_inputs, front,
                    r->num_fs_inputs, d->subpix);
+        out[i].zoff = zoff;
     }
     return 3;
 }

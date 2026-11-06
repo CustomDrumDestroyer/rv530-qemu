@@ -55,7 +55,7 @@ layout(push_constant) uniform PC { uint draw; } pc;
 
 layout(location = 0) in vec4 v_s[RVK_MAX_INPUTS];
 layout(location = 12) flat in vec4 v_f[RVK_MAX_INPUTS];
-layout(location = 24) flat in uvec2 v_misc;       /* flat mask, front */
+layout(location = 24) flat in uvec3 v_misc;       /* flat mask, front, polygon offset */
 layout(location = 25) noperspective in float v_z;
 
 #define D draws[pc.draw]
@@ -716,9 +716,10 @@ bool write_color(int n, uint x, uint y, vec4 shader)
 }
 
 #ifdef RVK_HAS_F64
-uint depth_to_fixed(float z, bool z16)
+uint depth_to_fixed(float z, float zoff, bool z16)
 {
-    double zf = double(z) * double(MISCF(RVK_M_DEPTH_SCALE)) + double(MISCF(RVK_M_DEPTH_OFFSET));
+    double zf = (double(z) + double(zoff)) * double(MISCF(RVK_M_DEPTH_SCALE)) +
+                double(MISCF(RVK_M_DEPTH_OFFSET));
     if (z16) zf = clamp(zf / 256.0, 0.0lf, 65535.0lf);
     else zf = clamp(zf, 0.0lf, 16777215.0lf);
     return uint(zf + 0.5lf);
@@ -729,12 +730,18 @@ uint depth_to_fixed(float z, bool z16)
  * carried as an unevaluated float sum hi + lo (an exact two-product and
  * two-sum), which holds the double result of the path above exactly, then
  * rounded the same way.  Needs IEEE float math (MoltenVK fast math off).
+ * The polygon offset zoff is added to z first, as an exact two-sum t + te:
+ * (t + te) * sc == p + pe, where the error of te * sc is far below the
+ * rounding unit.  With zoff == 0, te == 0 and the result is unchanged.
  */
-uint depth_to_fixed(float z, bool z16)
+uint depth_to_fixed(float z, float zoff, bool z16)
 {
     precise float sc = MISCF(RVK_M_DEPTH_SCALE), off = MISCF(RVK_M_DEPTH_OFFSET);
-    precise float p = z * sc;
-    precise float pe = fma(z, sc, -p);              /* z * sc == p + pe */
+    precise float t = z + zoff;
+    precise float tb = t - z;
+    precise float te = (z - (t - tb)) + (zoff - tb); /* z + zoff == t + te */
+    precise float p = t * sc;
+    precise float pe = fma(t, sc, -p) + te * sc;    /* (t + te) * sc == p + pe */
     precise float s = p + off;
     precise float bb = s - p;
     precise float se = (p - (s - bb)) + (off - bb); /* p + off == s + se */
@@ -811,7 +818,7 @@ void main()
             }
             if (!done) {
                 if (MISC(RVK_M_Z_EN) != 0u) {
-                    znew = depth_to_fixed(z, z16);
+                    znew = depth_to_fixed(z, uintBitsToFloat(v_misc.z), z16);
                     zpass = zs_compare(MISC(RVK_M_Z_FUNC), znew, zold);
                 }
                 if (do_stencil) {
