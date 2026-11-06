@@ -1072,21 +1072,34 @@ void r5xx_pvs_run(const R5xxPvsDecoded *d, const r5xx_vec4 *consts,
                   const r5xx_vec4 in[R5XX_PVS_MAX_INPUTS],
                   r5xx_vec4 out[R5XX_PVS_MAX_OUTPUTS])
 {
-    PvsExec *ex;
-    int pc, steps = 0, i;
+    /*
+     * The context lives on the stack, and only the registers that the
+     * program can reach are cleared: [0, num_temps) and [0, num_alt_temps),
+     * or all of them with relative addressing.  The other registers are
+     * never read.  This runs once for each vertex, so clearing all 8 KB
+     * (and a calloc) was a large part of the CPU vertex time.
+     */
+    PvsExec exs, *ex = &exs;
+    int pc, steps = 0, i, nt, na;
 
     if (!d || !out) {
         return;
     }
-    ex = calloc(1, sizeof(*ex));
-    if (!ex) {
-        return;
-    }
+    nt = d->uses_rel ? R5XX_PVS_MAX_TEMPS : (d->num_temps < R5XX_PVS_MAX_TEMPS ? d->num_temps : R5XX_PVS_MAX_TEMPS);
+    na = d->uses_rel ? R5XX_PVS_MAX_TEMPS : (d->num_alt_temps < R5XX_PVS_MAX_TEMPS ? d->num_alt_temps : R5XX_PVS_MAX_TEMPS);
+    memset(ex->temp, 0, nt * sizeof(ex->temp[0]));
+    memset(ex->alt, 0, na * sizeof(ex->alt[0]));
+    memset(ex->a0, 0, sizeof(ex->a0));
+    memset(ex->loop_cnt, 0, sizeof(ex->loop_cnt));
+    memset(ex->loop_idx, 0, sizeof(ex->loop_idx));
+    ex->pred = false;
     ex->d = d;
     ex->consts = consts;
     ex->out = out;
     if (in) {
         memcpy(ex->in, in, sizeof(ex->in));
+    } else {
+        memset(ex->in, 0, sizeof(ex->in));
     }
     ex->call_ret = -1;
 
@@ -1142,7 +1155,6 @@ void r5xx_pvs_run(const R5xxPvsDecoded *d, const r5xx_vec4 *consts,
             pc++;
         }
     }
-    free(ex);
 }
 
 /* ------------------------------------------------------------------ */
