@@ -63,6 +63,12 @@ fi
 if ! grep -q "hw/display/evergreen" meson.build; then
     patch -p1 < "$HERE/qemu/patches/0010-build-glue-evergreen.patch"
 fi
+# trees patched before eg_atom.c (the synthetic AtomBIOS mailbox) existed
+if ! grep -q "evergreen/eg_atom.c" hw/display/meson.build; then
+    sed -i.bak "s|'evergreen/eg_vk_ps.c'))|'evergreen/eg_vk_ps.c', 'evergreen/eg_atom.c'))|" \
+        hw/display/meson.build
+    rm -f hw/display/meson.build.bak
+fi
 
 case "$(uname -s)" in
 Darwin)
@@ -103,5 +109,7 @@ else
 fi
 mkdir -p "$HERE/build-rom"
 python3 "$HERE/scripts/atombios/mkrom.py" "$HERE/build-rom/rv530-atombios.rom"
+python3 "$HERE/scripts/atombios/mkrom-evergreen.py" "$HERE/build-rom/hd5770-atombios.rom"
 echo "built: $WORK/qemu-11.1.3/build/qemu-system-x86_64"
 echo "ROM:   $HERE/build-rom/rv530-atombios.rom"
+echo "ROM:   $HERE/build-rom/hd5770-atombios.rom (radeon-hd5770)"

@@ -6,7 +6,7 @@ set -euo pipefail
 DIR=${1:-$(cd "$(dirname "$0")/.." && pwd)/reference}
 mkdir -p "$DIR/linux-radeon" "$DIR/mesa"
 cd "$DIR/linux-radeon"
-for f in r500_reg.h rv515d.h avivod.h r300d.h r300_reg.h r520d.h rv515.c r520.c r300.c r100.c r100d.h \
+for f in pptable.h r500_reg.h rv515d.h avivod.h r300d.h r300_reg.h r520d.h rv515.c r520.c r300.c r100.c r100d.h \
          radeon_reg.h atom.c atom.h atom-bits.h atom-names.h atom-types.h atombios.h atombios_crtc.c \
          atombios_encoders.c radeon_atombios.c radeon_bios.c radeon_ring.c radeon_fence.c radeon_gart.c \
          radeon_device.c radeon_irq_kms.c radeon_cs.c radeon.h radeon_asic.c radeon_asic.h radeon_cursor.c \

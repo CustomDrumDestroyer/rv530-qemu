@@ -59,8 +59,9 @@ In a Mac OS X 10.6.8 guest:
 
 **Experimental:** a second device, `radeon-hd5770`, emulates an ATI Radeon
 HD 5770 (Evergreen). Mac OS X 10.6 and 10.7 run on it with Quartz Extreme and
-Core Image. The vertex and pixel shaders run on the host GPU. It needs a VBIOS
-dump of the Apple card. See [docs/EVERGREEN.md](docs/EVERGREEN.md).
+Core Image. The vertex and pixel shaders run on the host GPU. It uses its own
+synthetic AtomBIOS, so you do not need a VBIOS dump. See
+[docs/EVERGREEN.md](docs/EVERGREEN.md).
 
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
 lists the known bugs. [We welcome contributions](#contributing).
@@ -117,7 +118,7 @@ You do not need them from this repository.
 | `snowleopard/` | All the parts for the Snow Leopard guest: launcher (with `host.sh`, which selects KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the GOP driver of the card, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, and in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
 | `scripts/package/`, `.github/workflows/release.yml` | Build the pre-built packages on GitHub Actions |
 | `scripts/setup-qemu.sh` | Gets QEMU 11.1.3, adds the device, applies the patches, and builds QEMU and the option ROM |
-| `scripts/atombios/mkrom.py` | Builds a synthetic, clean-room AtomBIOS option ROM for the device |
+| `scripts/atombios/mkrom.py`, `scripts/atombios/mkrom-evergreen.py` | Build the synthetic, clean-room AtomBIOS option ROMs of the RV530 and of the HD 5770 |
 | `scripts/dnd/`, `scripts/agent-update.sh` | The host side of drag and drop and clipboard sync. Installs the guest agent through ssh |
 | `scripts/atomdis.py`, `scripts/regnames.py` | A disassembler for AtomBIOS command tables, with register names (a tool for debugging) |
 | `scripts/fetch-references.sh` | Gets the public reference sources that we used to write the code (Linux `radeon` driver files, Mesa 24.0.9) |
@@ -271,7 +272,9 @@ and to set the display timings. Real VBIOS images are copyrighted and are
 **not** part of this repository.
 
 Instead, `scripts/atombios/mkrom.py` builds a synthetic ROM from the public
-`atombios.h` layouts. The ROM has these parts:
+`atombios.h` layouts. `scripts/atombios/mkrom-evergreen.py` does the same for
+the HD 5770 ([docs/EVERGREEN.md](docs/EVERGREEN.md#the-option-rom)). The ROM of
+the RV530 has these parts:
 
 - A FirmwareInfo table.
 - One DVI-I connector on DDC1.

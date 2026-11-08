@@ -3,7 +3,11 @@
 # evergreen.c
 eg_mmio_read(uint64_t addr, uint32_t val) "0x%05" PRIx64 " -> 0x%08x"
 eg_mmio_write(uint64_t addr, uint32_t val) "0x%05" PRIx64 " <- 0x%08x"
+eg_rom_read(uint32_t off) "0x%05x"
 eg_ih_push(uint32_t src, uint32_t data, uint32_t wptr) "src %u data 0x%x wptr 0x%x"
+
+# eg_atom.c
+eg_atom_call(uint32_t idx, const char *name, uint32_t p0, uint32_t p1, uint32_t p2, uint32_t p3) "%u %s: 0x%08x 0x%08x 0x%08x 0x%08x"
 
 # eg_cp.c
 eg_cp_kick(uint32_t rptr, uint32_t wptr) "rptr %u wptr %u"

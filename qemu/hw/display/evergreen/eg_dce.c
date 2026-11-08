@@ -63,6 +63,19 @@ static bool eg_crtc_enabled(EvergreenState *s, int i)
     return CREG(s, i, EG_CRTC_CONTROL) & EG_CRTC_MASTER_EN;
 }
 
+/* the EnableCRTC command table of the synthetic VBIOS (eg_atom.c) */
+void eg_dce_crtc_enable(EvergreenState *s, int i, bool enable)
+{
+    uint32_t v;
+
+    if (i < 0 || i >= EG_NUM_CRTC) {
+        return;
+    }
+    v = CREG(s, i, EG_CRTC_CONTROL);
+    v = enable ? v | EG_CRTC_MASTER_EN : v & ~EG_CRTC_MASTER_EN;
+    eg_reg_write(s, EG_CRTC_CONTROL + crtc_offset[i], v);
+}
+
 /* ------------------------------------------------------------------ */
 /* Timing                                                              */
 /* ------------------------------------------------------------------ */

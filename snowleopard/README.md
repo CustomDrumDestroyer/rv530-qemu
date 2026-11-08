@@ -162,9 +162,9 @@ host, or run `agent/install.sh` in the guest.
 ## The Radeon HD 5770 (experimental)
 
 `DISPLAY_MODE=hd5770` starts the VM on the emulated Radeon HD 5770 instead of
-the X1600. It needs a VBIOS dump of the Apple card and a second boot volume
-made with `SL_FBNAME=Hoolock SL_GPUMODEL="ATI Radeon HD 5770"` (`ESP` selects
-it). See
+the X1600. It uses a synthetic AtomBIOS (no VBIOS dump) and needs a second
+boot volume made with `SL_FBNAME=Hoolock SL_GPUMODEL="ATI Radeon HD 5770"`
+(`ESP` selects it). See
 [docs/EVERGREEN.md](../docs/EVERGREEN.md).
 
 ## Mac OS X 10.7 Lion

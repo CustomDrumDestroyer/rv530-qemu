@@ -21,18 +21,11 @@ per second, and busier views at approximately 22.
 
 ## What you supply
 
-- The VBIOS of an Apple Radeon HD 5770 (1 GB), as a file. We do not supply it,
-  because it is copyrighted. It contains an EFI driver after the x86 image.
-  OVMF cannot run that driver, so remove it:
+- A Snow Leopard or Lion disk, as for the RV530
+  ([snowleopard/README.md](../snowleopard/README.md)).
 
-  ```
-  scripts/vbios-x86only.py AppleHD_5770_1024_MB.rom AppleHD_5770_1024_MB-x86only.rom
-  ```
-
-  The launcher looks for `rom/nextgen/AppleHD_5770_1024_MB-x86only.rom`.
-  `ROM5770` sets a different file. `*.rom` files are not part of the repository
-  (`.gitignore`).
-- A Snow Leopard disk, as for the RV530 ([snowleopard/README.md](../snowleopard/README.md)).
+You do not need a VBIOS dump. The device uses a synthetic AtomBIOS (see
+[The option ROM](#the-option-rom)).
 
 ## Setup
 
@@ -64,7 +57,7 @@ System Profiler → Graphics/Displays shows an ATI Radeon HD 5770 with 1024 MB.
 
 | Property | Default | What it does |
 | --- | --- | --- |
-| `romfile` | (none) | The x86-only VBIOS |
+| `romfile` | (none) | The option ROM. The launcher gives `build-rom/hd5770-atombios.rom` |
 | `vram_size_mb` | 1024 | VRAM size. BAR0 is a 256 MB window into it |
 | `xres`, `yres` | 1440, 900 | The preferred mode of the EDID |
 | `vulkan` | on | Off: the CPU does all the 3D work (slow, but a reference) |
@@ -127,8 +120,47 @@ time, the frame rate is lower.
 
 ![Mission Control in Lion on the emulated HD 5770](img/hd5770-lion-missioncontrol.png)
 
-Mission Control in Lion on the emulated HD 5770, with Chess open. We scaled
-the screenshot from 2560 x 1440 to 1920 x 1080.
+Mission Control in Lion on the emulated HD 5770, with Chess open.
+
+## The option ROM
+
+Real VBIOS images are copyrighted and are not part of this repository.
+`scripts/atombios/mkrom-evergreen.py` builds a synthetic AtomBIOS for the
+device. `scripts/setup-qemu.sh` writes it to `build-rom/hd5770-atombios.rom`,
+and the launcher makes it if it is not there. The script uses the public
+layouts of `atombios.h`, `ObjectID.h`, and `pptable.h` (Linux `radeon`). It
+copies no bytes from a real ROM.
+
+The ROM has these parts:
+
+- The identity strings in the layout of AMD option ROMs. The number of strings
+  is at 0x2f, a pointer to the first string is at 0x6e, and the date is at
+  0x50. The Apple driver rejects a ROM without them.
+- A master command table with 80 entries. The Apple driver rejects a longer
+  table.
+- FirmwareInfo 2.1: the clocks and the 27 MHz reference clock.
+- GPIO_I2C_Info and GPIO_Pin_LUT: the eight DDC pairs and the six HPD pins of
+  the device model.
+- Object_Header 1.3: two DisplayPort connectors and one dual-link DVI-I
+  connector, with their encoders, DDC lines, and HPD pins. This is the board
+  wiring of the Mac Pro HD 5770, which the Hoolock framebuffer expects. We
+  took these facts from the connector table of the real card. We did not copy
+  the table.
+- PowerPlayInfo: a boot state and a performance state. Without this table,
+  the Apple driver reads other bytes as the table, and the kernel panics.
+- Paravirtual command tables, as in the ROM of the RV530. Each table gives its
+  parameters to the device through a mailbox register block, and the device
+  does the operation in C (`eg_atom.c`).
+
+The Apple driver programs most display registers itself. Thus most command
+tables do nothing in the device. `EnableCRTC` sets the master enable bit of
+the CRTC. Without it, there is no scanout and no vertical blank interrupt, and
+GL programs draw only black. The clock queries, `AdjustDisplayPll`,
+`ComputeMemoryEnginePLL`, `PowerConnectorDetection`, and the DisplayPort
+tables return values. The trace event `eg_atom_call` logs each call.
+
+A real VBIOS still works: set `ROM5770` to the file. Remove its EFI driver
+first with `scripts/vbios-x86only.py`, because OVMF cannot run that driver.
 
 ## How the device works
 
@@ -140,6 +172,7 @@ The files are in `qemu/hw/display/evergreen/`.
 | `eg_cp.c` | Ring and indirect buffers, PM4 packets, scratch and RPTR write-back, and the async DMA engine |
 | `eg_dce.c` | DCE4 scanout (linear), the hardware cursor, interrupts, and the DDC bus with the EDID of the RV530 device |
 | `eg_hdp.c` | HDP apertures that the driver uses to copy surfaces |
+| `eg_atom.c` | The mailbox behind the paravirtual command tables of the synthetic AtomBIOS |
 | `eg_draw.c` | 3D state, draws, vertex fetch, the vertex shader on the CPU, clipping, and the CPU rasterizer. It sends each draw to the Vulkan backend |
 | `eg_shader.c` | Interpreter for the Evergreen shader ISA (VS, PS, and fetch shaders) |
 | `eg_tex.c`, `eg_tile.c` | Texture formats, sampling, and the 1D/2D tiling of Evergreen |

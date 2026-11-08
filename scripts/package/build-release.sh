@@ -14,7 +14,8 @@
 #   NAME/firmware/                               OVMF with the rv530 GOP
 #                                                driver, when OVMF_DIR holds
 #                                                build-ovmf.sh's output
-#   NAME/build-rom/rv530-atombios.rom            the synthetic option ROM
+#   NAME/build-rom/rv530-atombios.rom            the synthetic option ROMs
+#   NAME/build-rom/hd5770-atombios.rom           (rv530, radeon-hd5770)
 #   NAME/...                                     the repository's files
 #                                                (scripts, snowleopard/,
 #                                                docs, device sources)
@@ -64,7 +65,7 @@ rm -rf "$OUT/stage"
 # the repository's files, as tracked, and the generated option ROM
 (cd "$HERE" && git ls-files -z | xargs -0 tar -cf - --) | tar -xf - -C "$PKG"
 mkdir -p "$PKG/build-rom"
-cp "$HERE/build-rom/rv530-atombios.rom" "$PKG/build-rom/"
+cp "$HERE/build-rom/rv530-atombios.rom" "$HERE/build-rom/hd5770-atombios.rom" "$PKG/build-rom/"
 if [ -n "${OVMF_DIR:-}" ]; then
     mkdir -p "$PKG/firmware"
     cp "$OVMF_DIR/OVMF_CODE.fd" "$OVMF_DIR/OVMF_VARS.fd" "$PKG/firmware/"

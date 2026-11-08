@@ -3,7 +3,8 @@
  *
  * Enough of the chip for Linux radeon's evergreen_init() and Apple's
  * ATI5000Controller / ATIRadeonX3000 (Quartz Extreme, Core Image, GL)
- * against the real Apple VBIOS: register file with the status and
+ * with the synthetic AtomBIOS of scripts/atombios/mkrom-evergreen.py
+ * (eg_atom.c) or a real VBIOS: register file with the status and
  * identity values the drivers read, the memory controller (VRAM aperture,
  * PCIe GART), the interrupt handler ring (IH), the command processor and
  * async DMA rings (eg_cp.c), the DCE4 display engine (eg_dce.c) and the
@@ -340,6 +341,7 @@ uint32_t eg_reg_read(EvergreenState *s, uint32_t off)
          * dword at byte offset ROM_INDEX of the option ROM image */
         PCIDevice *d = PCI_DEVICE(s);
         uint32_t i = s->regs[EG_ROM_INDEX >> 2];
+        trace_eg_rom_read(i);
         if (d->has_rom && (uint64_t)i + 4 <= memory_region_size(&d->rom)) {
             return ldl_le_p((uint8_t *)memory_region_get_ram_ptr(&d->rom) + i);
         }
@@ -405,7 +407,8 @@ void eg_reg_write(EvergreenState *s, uint32_t off, uint32_t val)
     if (off >= EG_MMIO_SIZE) {
         return;
     }
-    if (eg_dce_write(s, off, val) || eg_hdp_write(s, off, val)) {
+    if (eg_dce_write(s, off, val) || eg_hdp_write(s, off, val) ||
+        eg_atom_reg_write(s, off, val)) {
         return;
     }
     switch (off) {

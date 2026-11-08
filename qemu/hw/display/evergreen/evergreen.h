@@ -36,6 +36,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(EvergreenState, EVERGREEN)
 #define EG_ROM_INDEX            0x00a8          /* VBIOS flash, byte offset */
 #define EG_ROM_DATA             0x00ac
 
+/* the paravirtual AtomBIOS of mkrom-evergreen.py (eg_atom.c) */
+#define EG_ATOM_MAILBOX         0x1ff00
+#define EG_ATOM_MAILBOX_DWORDS  16
+#define EG_ATOM_DOORBELL        0x1ff7c
+
 /* --- SRBM / GRBM / status --- */
 #define EG_SRBM_STATUS          0x0e50
 #define EG_SRBM_SOFT_RESET      0x0e60
@@ -166,7 +171,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(EvergreenState, EVERGREEN)
 #define EG_DISP_INTERRUPT_STATUS 0x60f4     /* ..._CONTINUE: 0x60f8, 0x60fc, 0x6100, 0x614c */
 
 /* DDC GPIO pairs (MASK, A, EN, Y at +0, +4, +8, +0xc), clock bit 0 and
- * data bit 8, from the Apple HD 5770 VBIOS GPIO_I2C_Info */
+ * data bit 8, in the order of the VBIOS GPIO_I2C_Info (eg_dce.c ddc_base,
+ * scripts/atombios/mkrom-evergreen.py) */
 #define EG_NUM_DDC              8
 
 /* surface tiling (eg_tile.c) */
@@ -314,5 +320,9 @@ void eg_dce_reset(EvergreenState *s);
 void eg_dce_fini(EvergreenState *s);
 bool eg_dce_read(EvergreenState *s, uint32_t off, uint32_t *val);
 bool eg_dce_write(EvergreenState *s, uint32_t off, uint32_t val);
+void eg_dce_crtc_enable(EvergreenState *s, int i, bool enable);
+
+/* eg_atom.c: the AtomBIOS mailbox of the synthetic VBIOS */
+bool eg_atom_reg_write(EvergreenState *s, uint32_t off, uint32_t val);
 
 #endif
