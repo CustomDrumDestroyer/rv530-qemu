@@ -162,9 +162,10 @@ host, or run `agent/install.sh` in the guest.
 ## Mac OS X 10.7 Lion
 
 Lion (10.7.5) installs and runs on the same card with Quartz Extreme and
-Core Image, as a second VM with its own directory (`WORK`).  Apple's
-`InstallMacOSX.dmg` holds `InstallMacOSX.pkg`, a xar archive with
-`InstallESD.dmg` inside; on Linux, without mounting anything:
+Core Image. It runs as a second VM, with its own directory (`WORK`).
+Apple's `InstallMacOSX.dmg` holds `InstallMacOSX.pkg`, a xar archive. That
+archive holds `InstallESD.dmg`. On Linux, these commands extract it without
+a mount:
 
 ```
 mkdir -p work/lion && cd work/lion
@@ -178,12 +179,19 @@ cd ../..
 SL_PICKER=1 SL_KCACHE=Auto ./make-opencore.sh ../OpenCore-1.0.8-DEBUG.zip work/lion/esp
 ```
 
-(`make-installer.py` takes the HFS+ volume out of the 2048-byte partition
-map and wraps it in a GPT disk; `SL_KCACHE=Auto` lets OpenCore inject into
-Lion's prelinked kernel instead of an mkext.)  Then boot the installer with
-the VM's own files, a free ssh port and VNC display, pick "Mac OS X Install
-ESD", erase the empty disk in Disk Utility (Mac OS Extended (Journaled), GUID)
-and reinstall; the installer reboots twice into the "Lion" entry:
+`make-installer.py` copies the HFS+ volume from the partition map with
+2048-byte blocks. Then it puts the volume in a GPT disk. With
+`SL_KCACHE=Auto`, OpenCore adds its kext to the prelinked kernel of Lion,
+not to an mkext.
+
+To install Lion, do these steps:
+
+1. Start the installer with the files of the VM, a free ssh port and a free
+   VNC display (see the command below).
+2. In the boot picker, select "Mac OS X Install ESD".
+3. In Disk Utility, erase the empty disk as Mac OS Extended (Journaled),
+   with a GUID partition map.
+4. Install Lion. The installer restarts two times into the "Lion" entry.
 
 ```
 . work/osk.env
@@ -192,14 +200,71 @@ SYSDISK=$PWD/work/lion/lion.qcow2 ESP=$PWD/work/lion/esp INSTALLER=$PWD/work/lio
 SSHPORT=2226 VNC=:4 SMP=4 MEM=4096 DISPLAY_MODE=rv530 INSTALL=1 ./sl-vm.sh
 ```
 
-Once installed, rebuild the ESP without `SL_PICKER` (keep `SL_KCACHE=Auto`,
-and the `SystemUUID` with `SL_UUID`) to boot straight to the login window.
-Lion needed two device changes, both about tiled memory: its driver fills
-textures through temporary `SURFACEn` tiling windows (the model converts the
-memory when a window is set and removed, `r5xx_mc.c`), and it samples
-NPOT tiled textures without `TXPITCH_EN` at a power-of-two pitch
-(`r5xx_tex.c`).  The 10.6 `tests/` binaries run unchanged on Lion and give
-the same results; `RV530Agent` is not installed there yet.
+After the installation, build the ESP again without `SL_PICKER`. Keep
+`SL_KCACHE=Auto`, and keep the `SystemUUID` with `SL_UUID`. The VM then
+starts directly to the login window.
+
+Lion needed two changes to the device. Both are about tiled memory:
+
+- The driver fills textures through temporary `SURFACEn` tiling windows.
+  The model converts the memory when the driver sets or removes a window
+  (`r5xx_mc.c`).
+- The driver samples NPOT tiled textures without `TXPITCH_EN`. The model
+  then uses the pitch of the next power of two (`r5xx_tex.c`).
+
+The 10.6 `tests/` binaries run on Lion without changes and give the same
+results. `RV530Agent` is not installed on Lion yet.
+
+## Mac OS X 10.5 Leopard
+
+Leopard installs and runs on the same card with Quartz Extreme and Core
+Image. We tested the 10.5.0 retail DVD (build 9A581). Leopard runs as
+another VM, with its own `WORK` directory. Its kernel is 32-bit only. The
+DVD image is a hybrid of ISO 9660 and an Apple partition map.
+`make-installer.py` accepts it directly:
+
+```
+mkdir -p work/leopard
+./make-installer.py leopard.iso work/leopard/installer.img
+SL_PICKER=1 SL_KARCH=i386 ./make-opencore.sh ../OpenCore-1.0.8-DEBUG.zip work/leopard/esp
+```
+
+With `SL_KARCH=i386`, OpenCore starts the i386 kernel on the 64-bit
+firmware. The option makes these changes:
+
+- It sets the OpenCore `KernelArch` to i386.
+- It disables `SetupVirtualMap`. With this quirk, the kernel reports "Bad
+  EFI system table signature" and AppleEFIRuntime causes a panic.
+- It enables `ClearTaskSwitchBit`.
+- It removes `arch=` from the boot-args.
+
+Do not use `SL_VERBOSE=1` with 10.5.0. Its `boot.efi` crashes in verbose
+mode.
+
+To install Leopard, start the installer with `WORK`, `SYSDISK`, `ESP`,
+`INSTALLER`, `QMP`, `SERIAL`, a free `SSHPORT` and `INSTALL=1`, as for Lion.
+We installed with `DISPLAY_MODE=std`. After the installation, build the ESP
+again without `SL_PICKER`. Keep `SL_KARCH=i386` and `SL_UUID`.
+
+Notes from the 10.5.0 installation:
+
+- Setup Assistant can stop at "How Do You Connect?" with a spinning cursor.
+  In that case, make the account from the Terminal of the install DVD. Make
+  a user plist in `/var/db/dslocal/nodes/Default/users` and its shadow hash.
+  Add the user to `admin` and make `/var/db/.AppleSetupDone`.
+- The status of the e1000 link is inactive. The network starts only after
+  `sudo ipconfig set en0 DHCP`. A LaunchDaemon can run this command at boot.
+- Disable sleep with `sudo pmset -a sleep 0 displaysleep 0`. The guest
+  sleeps after 10 minutes, and after that the network does not start again.
+- The Xcode Tools on the DVD (`Optional Installs`) build the `tests/`
+  programs.
+
+The 10.5 driver needed one change to the device. The driver reads the bus
+address of the VRAM from `CONFIG_APER_0_BASE`, not from the PCI BAR
+(`rv530.c`). The `tests/` programs give the same results as on 10.6. The
+Core Image blur is exact. One difference remains: `glReadPixels` from an
+RGBA8 FBO gives green and blue in the wrong order (`gltexfmt` prints
+`ff0080`). When the driver draws the texture, the colors are correct.
 
 ## Card identity
 

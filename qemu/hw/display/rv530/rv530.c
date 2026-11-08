@@ -184,6 +184,18 @@ uint32_t rv530_reg_read(RV530State *s, uint32_t off)
         return 1u << 2;             /* RADEON_MC_IDLE */
     case RV_CONFIG_APER_SIZE:
         return 256 * MiB;
+    case RV_CONFIG_APER_0_BASE:
+    case RV_CONFIG_APER_1_BASE: {
+        /* the bus address of the aperture (BAR 0).  The ATIRadeonX1000 of
+         * 10.5 maps VRAM from this address, not from the PCI BAR.  With 0,
+         * it maps the first 256 MiB of RAM, and the kernel panics.  The
+         * model has no byte-swapping aperture, so aperture 1 is the same
+         * memory. */
+        pcibus_t bar = pci_get_bar_addr(PCI_DEVICE(s), 0);
+        return bar == PCI_BAR_UNMAPPED ? 0 : bar;
+    }
+    case RV_CONFIG_REG_APER_SIZE:
+        return R5XX_REG_SPACE_SIZE;
     case RV_CP_STAT:
         return 0;
     default:

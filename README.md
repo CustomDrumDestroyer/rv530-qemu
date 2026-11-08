@@ -53,6 +53,9 @@ In a Mac OS X 10.6.8 guest:
 - **Mac OS X 10.7.5 (Lion):** installs and runs with Quartz Extreme and Core
   Image (Mission Control, Launchpad). See
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-107-lion).
+- **Mac OS X 10.5 (Leopard):** installs and runs with Quartz Extreme and Core
+  Image on the 32-bit kernel. See
+  [snowleopard/README.md](snowleopard/README.md#mac-os-x-105-leopard).
 
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
 lists the known bugs. [We welcome contributions](#contributing).

@@ -8,7 +8,8 @@
 #   outdir defaults to snowleopard/work/esp; sl-vm.sh uses outdir.img, a
 #   FAT image of it, when present (written at the end).
 #   SL_PICKER=1: show OpenCore's boot picker (needed to start the
-#   installer); SL_VERBOSE=1: verbose kernel boot.
+#   installer); SL_VERBOSE=1: verbose kernel boot; SL_KARCH=i386: boot a
+#   32-bit kernel (10.5).
 #
 # No third-party kexts: SMC comes from QEMU's isa-applesmc, the display is
 # either -vga std (installation) or the emulated rv530 (driver bring-up).
@@ -102,7 +103,9 @@ if os.environ.get('SL_TCG') == '1':
             MaxKernel='10.99.99', MinKernel='10.0.0', Replace=bytes.fromhex(repl),
             ReplaceMask=b'', Skip=0))
 p['Kernel']['Force'] = []
-p['Kernel']['Scheme']['KernelArch'] = 'x86_64'   # X1000 kexts are universal
+# SL_KARCH=i386 for 10.5: its kernel is 32-bit only.  The X1000 kexts are universal.
+karch = os.environ.get('SL_KARCH', 'x86_64')
+p['Kernel']['Scheme']['KernelArch'] = karch
 p['Kernel']['Scheme']['KernelCache'] = os.environ.get('SL_KCACHE', 'Mkext')
 p['Kernel']['Quirks']['ProvideCurrentCpuInfo'] = True
 p['Kernel']['Quirks']['DisableLinkeditJettison'] = True
@@ -115,6 +118,16 @@ q.update(AvoidRuntimeDefrag=True, EnableSafeModeSlide=True, EnableWriteUnprotect
          ProvideCustomSlide=True, SetupVirtualMap=True, RebuildAppleMemoryMap=True,
          DevirtualiseMmio=False, ProtectUefiServices=False,   # devirt of the OVMF flash breaks runtime SetVariable (bless panic)
          AllowRelocationBlock=True)   # 10.6 has no KASLR: kernel needs low memory
+if karch == 'i386':
+    # A 32-bit kernel on 64-bit firmware.  SetupVirtualMap makes a 64-bit
+    # map of the runtime services, and 10.5 then reads bad data at its EFI
+    # system table ("Bad EFI system table signature").  Runtime calls from
+    # mixed-mode code must not trap on the FPU (ClearTaskSwitchBit).
+    # The boot-args get no arch=.  With "arch=i386", OpenCore 1.0.8 uses the
+    # 64-bit kernel path and the boot fails.  KernelArch alone selects i386.
+    # The boot.efi of 10.5.0 crashes with -v: it draws through a UGA
+    # protocol that it gets only in graphics mode.  Keep SL_VERBOSE off.
+    q.update(SetupVirtualMap=False, ClearTaskSwitchBit=True)
 
 # Real Macs get the ATI framebuffer personality from EFI device properties:
 # ATISupport creates one IOFBStub per "@N," prefix and ATIFramebuffer matches
@@ -173,7 +186,7 @@ if int(os.environ['SL_SLTO']) > 2147483:
 nv['Add'][apple] = {
     # SL_VERBOSE=1: the text boot log instead of the Apple logo
     'boot-args': os.environ.get('SL_BOOTARGS', ('-v ' if os.environ.get('SL_VERBOSE') == '1' else '') +
-                                'keepsyms=1 debug=0x100 arch=x86_64 slto_us=' + os.environ['SL_SLTO']),
+                                'keepsyms=1 debug=0x100 ' + ('arch=x86_64 ' if karch == 'x86_64' else '') + 'slto_us=' + os.environ['SL_SLTO']),
     'csr-active-config': b'\x00\x00\x00\x00',
     'prev-lang:kbd': b'en:0',
     'run-efi-updater': 'No',
