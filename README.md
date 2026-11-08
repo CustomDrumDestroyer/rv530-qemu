@@ -54,7 +54,7 @@ In a Mac OS X 10.6.8 guest:
   Image (Mission Control, Launchpad). See
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-107-lion).
 - **Mac OS X 10.5 (Leopard):** installs and runs with Quartz Extreme and Core
-  Image on the 32-bit kernel. See
+  Image. It uses the 32-bit kernel. See
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-105-leopard).
 
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
@@ -357,8 +357,9 @@ MoltenVK, `tests/vk` does not run its tests and shows the reason.
 
 ## Screenshots
 
-All screenshots come from a Mac OS X 10.6.8 guest on the Vulkan backend. The
-first two screenshots are the exceptions: they come from the Linux guest.
+All screenshots come from guests on the Vulkan backend. The first two
+screenshots come from the Linux guest. The last five come from Mac OS X 10.5
+and 10.7. All other screenshots come from Mac OS X 10.6.8.
 
 ![Linux fbcon on the emulated card](docs/img/fbcon-dvi-1280x800.png)
 
@@ -395,6 +396,30 @@ The full-screen menu of Front Row.
 
 QuickTime Player X plays the sample movie from Apple. Core Video shows the
 frames through OpenGL as Y'CbCr textures.
+
+![Chess on Mac OS X 10.5](docs/img/leopard-qe-chess.png)
+
+Chess on Mac OS X 10.5.0 at 1440 x 900, with the translucent menu bar and
+the 3D Dock of Leopard.
+
+![The Arabesque screen saver on Mac OS X 10.5](docs/img/leopard-ci-arabesque.png)
+
+The Arabesque screen saver on Mac OS X 10.5.0. It is a Quartz Composer
+composition with Core Image feedback and blur, in full screen.
+
+![Front Row on Mac OS X 10.5](docs/img/leopard-qe-frontrow.png)
+
+The full-screen menu of Front Row on Mac OS X 10.5.0.
+
+![Mission Control on Mac OS X 10.7](docs/img/lion-qe-missioncontrol.png)
+
+Mission Control on Mac OS X 10.7.5, with Chess open. The guest runs at
+2560 x 1440. We scaled the screenshot to 1920 x 1080.
+
+![Launchpad on Mac OS X 10.7](docs/img/lion-ci-launchpad.png)
+
+Launchpad on Mac OS X 10.7.5. Core Image blurs the desktop behind the icons.
+The guest runs at 2560 x 1440. We scaled the screenshot to 1920 x 1080.
 
 ## Contributing
 
