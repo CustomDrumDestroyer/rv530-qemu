@@ -268,13 +268,17 @@ Notes from the 10.5.0 installation:
 - The Xcode Tools on the DVD (`Optional Installs`) build the `tests/`
   programs.
 
-The 10.5 driver needed one change to the device. The driver reads the bus
-address of the VRAM from `CONFIG_APER_0_BASE`, not from the PCI BAR
-(`rv530.c`). The `tests/` programs give the same results as on 10.6. The
-Core Image blur is exact. One difference remains: `glReadPixels` from an
-RGBA8 FBO gives green and blue in the wrong order (`gltexfmt` prints
-`ff0080`, [#13](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/13)).
-When the driver draws the texture, the colors are correct.
+The 10.5 driver needed two changes to the device:
+
+- The driver reads the bus address of the VRAM from `CONFIG_APER_0_BASE`,
+  not from the PCI BAR (`rv530.c`).
+- For `glReadPixels` from an FBO, the driver samples the FBO texture in VRAM
+  with the 8IN32 byte swap (`TXO_ENDIAN`). The device now does the texture
+  swap only for textures in system memory (GART). VRAM data has no swap
+  (`r5xx_3d.c`, [#13](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/13)).
+
+The `tests/` programs give the same results as on 10.6. The Core Image blur
+is exact.
 
 ## Card identity
 

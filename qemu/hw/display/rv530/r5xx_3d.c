@@ -916,6 +916,17 @@ static void gfx_update_textures(RV530State *s)
         if (!r5xx_tex_decode(&tr, true, &g->samplers[n], err, sizeof(err))) {
             gfx_warn(s, "texture unit %d: %s", n, err);
         }
+        /*
+         * TXO_ENDIAN swaps only texels that come from system memory (GART):
+         * client-storage textures in big-endian packed types.  In VRAM the
+         * data is always native.  The Mac OS X 10.5 driver samples FBO
+         * textures in VRAM with ENDIAN 8IN32 for glReadPixels, and draws
+         * the same textures with no swap.
+         */
+        if (g->samplers[n].layout.gpu_addr >= s->fb_start &&
+            g->samplers[n].layout.gpu_addr <= s->fb_end) {
+            g->samplers[n].endian = 0;
+        }
         if (trace_event_get_state_backends(TRACE_RV530_DBG)) {
             const R5xxTexSampler *t = &g->samplers[n];
             g_autofree char *m = g_strdup_printf(

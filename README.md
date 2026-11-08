@@ -428,12 +428,12 @@ The full-screen menu of Front Row on Mac OS X 10.5.0.
 ![Mission Control on Mac OS X 10.7](docs/img/lion-qe-missioncontrol.png)
 
 Mission Control on Mac OS X 10.7.5, with Chess open. The guest runs at
-2560 x 1440. We scaled the screenshot to 1920 x 1080.
+2560 x 1440.
 
 ![Launchpad on Mac OS X 10.7](docs/img/lion-ci-launchpad.png)
 
 Launchpad on Mac OS X 10.7.5. Core Image blurs the desktop behind the icons.
-The guest runs at 2560 x 1440. We scaled the screenshot to 1920 x 1080.
+The guest runs at 2560 x 1440.
 
 ## Contributing
 
