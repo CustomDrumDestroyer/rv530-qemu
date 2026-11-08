@@ -159,6 +159,48 @@ launchctl load -w /Library/LaunchDaemons/local.sshd.plist
 install DVD, under Optional Installs. Then run `scripts/agent-update.sh` on the
 host, or run `agent/install.sh` in the guest.
 
+## Mac OS X 10.7 Lion
+
+Lion (10.7.5) installs and runs on the same card with Quartz Extreme and
+Core Image, as a second VM with its own directory (`WORK`).  Apple's
+`InstallMacOSX.dmg` holds `InstallMacOSX.pkg`, a xar archive with
+`InstallESD.dmg` inside; on Linux, without mounting anything:
+
+```
+mkdir -p work/lion && cd work/lion
+dmg2img -i InstallMacOSX.dmg -o outer.img
+# outer.img: Apple partition map, 2048-byte blocks, the HFS+ volume at block 18
+dd if=outer.img of=outer-hfs.img bs=2048 skip=18 count=<Apple_HFS length>
+guestfish --ro -a outer-hfs.img run : mount-ro /dev/sda / : download /InstallMacOSX.pkg InstallMacOSX.pkg
+mkdir x && bsdtar -xf InstallMacOSX.pkg -C x InstallMacOSX.pkg/InstallESD.dmg
+../../make-installer.py x/InstallMacOSX.pkg/InstallESD.dmg installer.img
+cd ../..
+SL_PICKER=1 SL_KCACHE=Auto ./make-opencore.sh ../OpenCore-1.0.8-DEBUG.zip work/lion/esp
+```
+
+(`make-installer.py` takes the HFS+ volume out of the 2048-byte partition
+map and wraps it in a GPT disk; `SL_KCACHE=Auto` lets OpenCore inject into
+Lion's prelinked kernel instead of an mkext.)  Then boot the installer with
+the VM's own files, a free ssh port and VNC display, pick "Mac OS X Install
+ESD", erase the empty disk in Disk Utility (Mac OS Extended (Journaled), GUID)
+and reinstall; the installer reboots twice into the "Lion" entry:
+
+```
+. work/osk.env
+WORK=$PWD/work/lion QMP=$PWD/work/lion/qmp.sock SERIAL=file:$PWD/work/lion/serial.log \
+SYSDISK=$PWD/work/lion/lion.qcow2 ESP=$PWD/work/lion/esp INSTALLER=$PWD/work/lion/installer.img \
+SSHPORT=2226 VNC=:4 SMP=4 MEM=4096 DISPLAY_MODE=rv530 INSTALL=1 ./sl-vm.sh
+```
+
+Once installed, rebuild the ESP without `SL_PICKER` (keep `SL_KCACHE=Auto`,
+and the `SystemUUID` with `SL_UUID`) to boot straight to the login window.
+Lion needed two device changes, both about tiled memory: its driver fills
+textures through temporary `SURFACEn` tiling windows (the model converts the
+memory when a window is set and removed, `r5xx_mc.c`), and it samples
+NPOT tiled textures without `TXPITCH_EN` at a power-of-two pitch
+(`r5xx_tex.c`).  The 10.6 `tests/` binaries run unchanged on Lion and give
+the same results; `RV530Agent` is not installed there yet.
+
 ## Card identity
 
 The device shows itself as the Mobility Radeon X1600 of the iMac (1002:71C5,

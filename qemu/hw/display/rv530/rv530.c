@@ -313,8 +313,7 @@ void rv530_reg_write(RV530State *s, uint32_t off, uint32_t val)
         return;
     }
     if (off >= 0x0b00 && off <= 0x0b7c) {
-        /* SURFACE_CNTL / SURFACEn_*: consulted by rv530_linear_surface() */
-        s->regs[idx] = val;
+        rv530_surface_write(s, off, val);
         return;
     }
     if (s->debug & RV_DEBUG_UNKNOWN) {
@@ -599,6 +598,9 @@ static void rv530_reset(DeviceState *dev)
     /* DP_CNTL resets to left-to-right / top-to-bottom; Apple's driver
      * never programs it */
     s->regs[0x16c0 >> 2] = 0x3;
+    memset(s->surf_lo, 0, sizeof(s->surf_lo));
+    memset(s->surf_hi, 0, sizeof(s->surf_hi));
+    memset(s->surf_info, 0, sizeof(s->surf_info));
     s->r2d_legacy[0] = s->r2d_legacy[1] = false;
     memset(s->mc_regs, 0, sizeof(s->mc_regs));
     memset(s->pcie_regs, 0, sizeof(s->pcie_regs));

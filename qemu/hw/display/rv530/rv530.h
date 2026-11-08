@@ -271,6 +271,7 @@ typedef struct RV530Scanout {
 
 
 #define RV_NUM_CRTC 2
+#define RV_NUM_SURFACES 8      /* RADEON_SURFACE0..7 */
 
 struct RV530State;
 typedef struct RV530Crtc {
@@ -323,6 +324,9 @@ struct RV530State {
 
     /* register file */
     uint32_t regs[R5XX_NUM_REGS];
+    /* the RADEON_SURFACEn windows in effect (r5xx_mc.c) */
+    uint32_t surf_lo[RV_NUM_SURFACES], surf_hi[RV_NUM_SURFACES];
+    uint32_t surf_info[RV_NUM_SURFACES];
     uint32_t mc_regs[256];
     uint32_t pcie_regs[256];
     uint32_t pll_regs[64];
@@ -447,6 +451,7 @@ bool rv530_gart_ram_page(RV530State *s, uint32_t addr, MemoryRegion *ram,
                          uint64_t *ram_off);
 void rv530_gfx_gart_changed(RV530State *s);
 bool rv530_linear_surface(RV530State *s, uint32_t gpu_addr);
+void rv530_surface_write(RV530State *s, uint32_t off, uint32_t val);
 void rv530_surface_hook_init(RV530State *s);
 uint8_t *rv530_gpu_map(RV530State *s, uint32_t addr, uint32_t len, bool write);
 void rv530_gpu_read(RV530State *s, uint32_t addr, void *buf, uint32_t len);

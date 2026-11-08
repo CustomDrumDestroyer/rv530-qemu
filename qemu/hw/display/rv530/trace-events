@@ -29,6 +29,7 @@ rv530_cp_wptr(uint32_t wptr, uint32_t rptr) "wptr %u rptr %u"
 rv530_cp_microcode(uint32_t words, uint32_t hash) "%u words hash 0x%08x"
 
 # r5xx_avivo.c
+rv530_surface(int i, uint32_t lo, uint32_t hi, uint32_t info, int to_tiled) "surface %d 0x%08x-0x%08x info 0x%08x to_tiled %d"
 rv530_scanout_mode(int crtc, uint32_t w, uint32_t h, uint32_t bpp, uint32_t pitch, uint32_t addr, bool tiled, bool zc) "crtc %d %ux%u bpp %u pitch %u addr 0x%08x tiled %d zero_copy %d"
 rv530_avivo_write(uint32_t off, const char *name, uint32_t val) "0x%04x %s <- 0x%08x"
 

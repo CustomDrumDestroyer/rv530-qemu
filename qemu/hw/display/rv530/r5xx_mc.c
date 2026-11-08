@@ -236,14 +236,26 @@ static uint8_t *rv530_gart_map_page_locked(RV530State *s, uint32_t addr, bool wr
 /*
  * RADEON_SURFACEn: aperture windows through which the CPU sees tiled VRAM
  * linearly.  The model cannot swizzle direct-mapped aperture accesses, so
- * memory under an active tiling surface is stored linearly and GPU-side
- * tiled accesses to it are treated as linear (see r5xx_linear_hook).
+ * memory under a set tiling surface is kept linear, and GPU-side tiled
+ * accesses to it are treated as linear (see r5xx_linear_hook).  The memory
+ * is converted when a window is set (tiled -> linear) and removed (linear
+ * -> tiled), so the GPU's tiled view of it stays right across the window's
+ * life.  Lion's driver needs that: it sets a window over a tiled texture,
+ * fills it with the CPU, removes the window and samples the texture tiled.
+ * 10.6 only keeps one window over the front buffer.
  */
-#define RV_SURFACE0_INFO   0x0b0c
+#define RV_SURFACE_CNTL    0x0b00
 #define RV_SURFACE0_LOWER  0x0b04
-#define RV_SURFACE0_UPPER  0x0b08
 #define RV_SURFACE_STRIDE  0x10
 #define RV_SURF_TILE_MASK  0x000f0000u
+#define RV_SURF_TILE_MACRO (1u << 16)
+#define RV_SURF_TILE_MICRO (2u << 16)
+#define RV_SURF_PITCH_MASK 0x0000ffffu       /* in units of 8 bytes */
+
+static bool rv530_surf_set(uint32_t lo, uint32_t hi, uint32_t info)
+{
+    return (info & RV_SURF_TILE_MASK) && hi > lo;
+}
 
 bool rv530_linear_surface(RV530State *s, uint32_t gpu_addr)
 {
@@ -254,17 +266,117 @@ bool rv530_linear_surface(RV530State *s, uint32_t gpu_addr)
         return false;
     }
     off = gpu_addr - s->fb_start;
-    for (i = 0; i < 8; i++) {
-        uint32_t base = i * RV_SURFACE_STRIDE;
-        uint32_t info = s->regs[(RV_SURFACE0_INFO + base) >> 2];
-        uint32_t lo = s->regs[(RV_SURFACE0_LOWER + base) >> 2];
-        uint32_t hi = s->regs[(RV_SURFACE0_UPPER + base) >> 2];
-
-        if ((info & RV_SURF_TILE_MASK) && hi > lo && off >= lo && off <= hi) {
+    for (i = 0; i < RV_NUM_SURFACES; i++) {
+        if (rv530_surf_set(s->surf_lo[i], s->surf_hi[i], s->surf_info[i]) &&
+            off >= s->surf_lo[i] && off <= s->surf_hi[i]) {
             return true;
         }
     }
     return false;
+}
+
+/*
+ * Convert VRAM [lo, hi] between linear and the surface's tiling.  Colour
+ * tiling only (depth tiling has its own layout and stays linear, as
+ * before); the layout is taken at 32 bpp, which for micro and macro tiles
+ * is the same byte layout as 16 bpp.  Every tiled layout here keeps runs
+ * of 16 bytes together, so those are moved whole.
+ */
+static void rv530_surf_convert(RV530State *s, int i, uint32_t lo, uint32_t hi,
+                               uint32_t info, bool to_tiled)
+{
+    uint32_t pitch = (info & RV_SURF_PITCH_MASK) * 8;
+    uint32_t mode = info & RV_SURF_TILE_MASK;
+    R5xxSurfaceLayout l = { .bpp = 4, .micro_mode = 1, .is_r500 = true };
+    uint64_t len;
+    uint32_t rows, x, y;
+    uint8_t *tmp, *v;
+
+    if (mode == (RV_SURF_TILE_MACRO | RV_SURF_TILE_MICRO)) {
+        l.tiling = R5XX_TILE_MICRO_MACRO;
+    } else if (mode == RV_SURF_TILE_MACRO) {
+        l.tiling = R5XX_TILE_MACRO;
+    } else if (mode == RV_SURF_TILE_MICRO) {
+        l.tiling = R5XX_TILE_MICRO;
+    } else {
+        return;
+    }
+    if (pitch < 16 || (pitch & 15) || hi >= s->vram_size) {
+        return;
+    }
+    len = (uint64_t)hi - lo + 1;
+    rows = len / pitch;
+    if (!rows) {
+        return;
+    }
+    l.pitch_bytes = pitch;
+    l.width = pitch / 4;
+    l.height = rows;
+    trace_rv530_surface(i, lo, hi, info, to_tiled);
+    rv530_gfx_flush(s);             /* the GPU's writes are in VRAM */
+    v = s->vram_ptr + lo;
+    tmp = g_malloc(len);
+    memcpy(tmp, v, len);
+    for (y = 0; y < rows; y++) {
+        for (x = 0; x < l.width; x += 4) {
+            uint64_t t = r5xx_tiled_pixel_offset(&l, x, y);
+            uint64_t p = (uint64_t)y * pitch + x * 4;
+
+            if (t + 16 > len) {
+                continue;
+            }
+            if (to_tiled) {
+                memcpy(v + t, tmp + p, 16);
+            } else {
+                memcpy(v + p, tmp + t, 16);
+            }
+        }
+    }
+    g_free(tmp);
+    memory_region_set_dirty(&s->vram, lo, len);
+}
+
+/*
+ * SURFACE_CNTL and SURFACEn_LOWER/UPPER/INFO.  A window takes effect when
+ * its INFO is written (Apple writes LOWER, UPPER, INFO to set one and
+ * clears them in the same order, so LOWER = 0 alone must not move it), or
+ * on a LOWER/UPPER write while no window is set (Linux writes INFO first).
+ */
+void rv530_surface_write(RV530State *s, uint32_t off, uint32_t val)
+{
+    uint32_t rel = off - RV_SURFACE0_LOWER;
+    int i = rel / RV_SURFACE_STRIDE;
+    uint32_t base = RV_SURFACE0_LOWER + i * RV_SURFACE_STRIDE;
+    uint32_t lo, hi, info;
+    bool was;
+
+    s->regs[off >> 2] = val;
+    if (off < RV_SURFACE0_LOWER || rel % RV_SURFACE_STRIDE > 8 ||
+        i >= RV_NUM_SURFACES) {
+        return;
+    }
+    was = rv530_surf_set(s->surf_lo[i], s->surf_hi[i], s->surf_info[i]);
+    if (was && rel % RV_SURFACE_STRIDE != 8) {
+        return;
+    }
+    lo = s->regs[base >> 2];
+    hi = s->regs[(base + 4) >> 2];
+    info = s->regs[(base + 8) >> 2];
+    if (lo == s->surf_lo[i] && hi == s->surf_hi[i] && info == s->surf_info[i]) {
+        return;
+    }
+    if (was) {
+        uint32_t olo = s->surf_lo[i], ohi = s->surf_hi[i], oinfo = s->surf_info[i];
+
+        s->surf_info[i] = 0;        /* off the linear list first */
+        rv530_surf_convert(s, i, olo, ohi, oinfo, true);
+    }
+    if (rv530_surf_set(lo, hi, info)) {
+        rv530_surf_convert(s, i, lo, hi, info, false);
+    }
+    s->surf_lo[i] = lo;
+    s->surf_hi[i] = hi;
+    s->surf_info[i] = info;
 }
 
 static bool rv530_linear_hook(void *opaque, uint32_t gpu_addr)

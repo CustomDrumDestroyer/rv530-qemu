@@ -1,5 +1,6 @@
 # Core Image Gaussian blur on a GPU CIContext vs the software renderer.
-# Run in the guest with the system Python 2.6: python ci_blur_check.py
+# Run in the guest with the system Python (2.6 on 10.6, 2.7 on 10.7):
+# python ci_blur_check.py
 # Prints the red channel at a few probes for both and the max difference
 # (expect 0).
 import sys, time
@@ -23,7 +24,9 @@ for name, sw in (("gpu", False), ("cpu", True)):
     ctx.drawImage_inRect_fromRect_(out, CGRectMake(0, 0, w, h), CGRectMake(0, 0, w, h))
     CGContextFlush(dst)
     dt = time.time() - t
-    buf = str(CGDataProviderCopyData(CGImageGetDataProvider(CGBitmapContextCreateImage(dst))).bytes())
+    data = CGDataProviderCopyData(CGImageGetDataProvider(CGBitmapContextCreateImage(dst))).bytes()
+    # 10.6 (Python 2.6) gets a buffer, 10.7 (2.7) a memoryview
+    buf = data.tobytes() if hasattr(data, "tobytes") else str(data)
     vals = [ord(buf[(y * w + x) * 4 + 2]) for (x, y) in ((128, 128), (64, 128), (60, 128), (52, 128), (30, 128), (5, 5))]
     res[name] = vals
     print name, "%.3fs" % dt, "red channel at probes:", vals

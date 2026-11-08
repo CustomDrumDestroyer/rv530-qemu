@@ -50,6 +50,9 @@ In a Mac OS X 10.6.8 guest:
   drop, clipboard sync, and resizing of the guest when you resize the window.
 - **Linux guests:** the in-kernel `radeon` driver (KMS, fbcon, X with EXA and
   3D compositing).
+- **Mac OS X 10.7.5 (Lion):** installs and runs with Quartz Extreme and Core
+  Image (Mission Control, Launchpad). See
+  [snowleopard/README.md](snowleopard/README.md#mac-os-x-107-lion).
 
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
 lists the known bugs. [We welcome contributions](#contributing).

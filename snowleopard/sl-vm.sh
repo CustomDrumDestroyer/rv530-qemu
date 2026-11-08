@@ -13,8 +13,10 @@
 #   DISPLAY_MODE=rv530 sl-vm.sh      # emulated Radeon X1600 as the only GPU
 #   DISPLAY_MODE=both sl-vm.sh       # -vga std for the firmware + rv530
 #
-# Environment: OSK (the Apple SMC key, required), SYSDISK (default
-# work/snowleopard.qcow2, created at 40G if missing), INSTALLER (raw HFS+
+# Environment: OSK (the Apple SMC key, required), WORK (the VM's own
+# directory for the disk, NVRAM, sockets and logs; default work/, e.g.
+# work/lion for a second VM), SYSDISK (default
+# $WORK/snowleopard.qcow2, created at 40G if missing), INSTALLER (raw HFS+
 # image of the install DVD, attached only if INSTALL=1), ESP (OpenCore
 # folder from make-opencore.sh), ROM (VBIOS for the rv530; default the
 # synthetic AtomBIOS from scripts/atombios/mkrom.py, built into
@@ -34,7 +36,7 @@
 # The QEMU log goes to work/qemu.log.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-W=$HERE/work
+W=${WORK:-$HERE/work}
 mkdir -p "$W"
 # QEMU from scripts/setup-qemu.sh, else from a release package (bin/)
 if [ -z "${QEMU:-}" ]; then

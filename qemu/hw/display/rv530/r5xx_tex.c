@@ -328,6 +328,15 @@ void *r5xx_linear_hook_opaque;
 uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
                                    uint32_t x, uint32_t y)
 {
+    if (r5xx_addr_is_linear(l->gpu_addr)) {
+        return y * l->pitch_bytes + x * (l->bpp ? l->bpp : 1);
+    }
+    return r5xx_tiled_pixel_offset(l, x, y);
+}
+
+uint32_t r5xx_tiled_pixel_offset(const R5xxSurfaceLayout *l,
+                                 uint32_t x, uint32_t y)
+{
     uint32_t bpp = l->bpp ? l->bpp : 1;
     bool macro = l->tiling == R5XX_TILE_MACRO ||
                  l->tiling == R5XX_TILE_MICRO_MACRO;
@@ -335,8 +344,7 @@ uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
     uint32_t mw, mh;        /* micro tile size in pixels */
     uint32_t off;
 
-    if (l->compressed || (!macro && micro == 0) ||
-        r5xx_addr_is_linear(l->gpu_addr)) {
+    if (l->compressed || (!macro && micro == 0)) {
         /* Linear.  Compressed surfaces are never tiled by Mesa; x,y are
          * block coordinates here. */
         return y * l->pitch_bytes + x * bpp;
@@ -956,6 +964,16 @@ static void setup_miptree(R5xxTexSampler *s)
         }
         if (i == 0 && s->pitch_en) {
             stride = s->layout.pitch_bytes;
+        } else if (i == 0 && !s->compressed && !is_pow2(w) &&
+                   s->layout.tiling != R5XX_TILE_LINEAR) {
+            /* A tiled NPOT texture without TXPITCH_EN has the pitch of
+             * the next power of two: Lion's driver blits the 160-wide
+             * last column of the screen-size background (256-wide
+             * tiles) micro-tiled at 256 pixels and samples it so.  Mesa
+             * always sets TXPITCH_EN for NPOT textures. */
+            if (next_pow2(w) * s->bpp > stride) {
+                stride = next_pow2(w) * s->bpp;
+            }
         }
 
         layer = stride * nblocksy;

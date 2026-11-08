@@ -43,9 +43,10 @@ typedef struct R5xxSurfaceLayout {
 } R5xxSurfaceLayout;
 
 /* Optional device hook: true when gpu_addr lies in memory the CPU sees
- * through a tiling "surface" aperture window (RADEON_SURFACEn).  Such
- * memory is kept linear in the model (the aperture is direct-mapped RAM),
- * so tiled GPU accesses to it are treated as linear too. */
+ * through a tiling "surface" aperture window (RADEON_SURFACEn).  While the
+ * window is set, that memory is kept linear in the model (the aperture is
+ * direct-mapped RAM), so tiled GPU accesses to it are treated as linear
+ * too; the device converts it when the window is set and removed. */
 extern bool (*r5xx_linear_hook)(void *opaque, uint32_t gpu_addr);
 extern void *r5xx_linear_hook_opaque;
 static inline bool r5xx_addr_is_linear(uint32_t gpu_addr)
@@ -57,6 +58,9 @@ static inline bool r5xx_addr_is_linear(uint32_t gpu_addr)
 uint32_t r5xx_surface_row_run(const R5xxSurfaceLayout *l, uint32_t x, uint32_t y);
 uint32_t r5xx_surface_pixel_offset(const R5xxSurfaceLayout *l,
                                    uint32_t x, uint32_t y);
+/* The same, ignoring r5xx_linear_hook: the tiled layout itself. */
+uint32_t r5xx_tiled_pixel_offset(const R5xxSurfaceLayout *l,
+                                 uint32_t x, uint32_t y);
 
 /* ------------------------------------------------------------------ */
 /* Texture formats                                                     */
