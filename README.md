@@ -57,6 +57,11 @@ In a Mac OS X 10.6.8 guest:
   Image. It uses the 32-bit kernel. See
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-105-leopard).
 
+**Experimental:** a second device, `radeon-hd5770`, emulates an ATI Radeon
+HD 5770 (Evergreen). Snow Leopard runs on it with Quartz Extreme and Core
+Image, and the pixel work runs on the host GPU. It needs a VBIOS dump of the
+Apple card. See [docs/EVERGREEN.md](docs/EVERGREEN.md).
+
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
 lists the known bugs. [We welcome contributions](#contributing).
 
@@ -108,6 +113,7 @@ You do not need them from this repository.
 | `qemu/patches/0007-rv530-metal-check-macos.patch` | macOS hosts: builds `r5xx_vk_mac.m`, which checks the Metal devices before QEMU loads MoltenVK |
 | `qemu/patches/0008-hvf-log-clear-page-align.patch` | Hypervisor.framework (Intel Macs): aligns to pages the dirty-log clear that std VGA makes unaligned. QEMU 11.1.2 stopped on an assertion without it |
 | `qemu/patches/0009-tcg-notdirty-race.patch` | TCG: reads the dirty bits while it holds the TLB lock. It does this when it installs a TLB entry and when it removes `TLB_NOTDIRTY` from an entry. Thus a dirty-log reset at the same time cannot let a vCPU write a page without a log entry |
+| `qemu/hw/display/evergreen/`, `qemu/patches/0010-build-glue-evergreen.patch` | The experimental Radeon HD 5770 device and its build glue ([docs/EVERGREEN.md](docs/EVERGREEN.md)) |
 | `snowleopard/` | All the parts for the Snow Leopard guest: launcher (with `host.sh`, which selects KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the GOP driver of the card, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, and in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
 | `scripts/package/`, `.github/workflows/release.yml` | Build the pre-built packages on GitHub Actions |
 | `scripts/setup-qemu.sh` | Gets QEMU 11.1.3, adds the device, applies the patches, and builds QEMU and the option ROM |
@@ -117,7 +123,7 @@ You do not need them from this repository.
 | `scripts/fetch-references.sh` | Gets the public reference sources that we used to write the code (Linux `radeon` driver files, Mesa 24.0.9) |
 | `qemu/hw/display/rv530/tests/` | Unit tests: vertex programs (`pvs/`), fragment programs (`us/`), rasterizer (`raster/`), texture formats and sampling (`tex/`), and tests that compare Vulkan with the CPU path (`vk/`) |
 | `qemu/hw/display/rv530/tools/mesa-rc/` | Puts the Mesa r300/r500 shader compiler in a command-line tool. We use it as the reference for the shader decoders |
-| `docs/` | Design document, status, and screenshots |
+| `docs/` | Design document, status, the HD 5770 device, and screenshots |
 
 ## Pre-built packages
 

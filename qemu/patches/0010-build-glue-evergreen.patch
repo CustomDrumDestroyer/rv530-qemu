@@ -1,0 +1,32 @@
+Subject: [PATCH] hw/display: build the evergreen (radeon-hd5770) device
+
+Adds hw/display/evergreen to the build, under CONFIG_RV530: it shares
+the rv530 EDID monitor model (rv530/r5xx_edid.c).
+---
+--- a/meson.build
++++ b/meson.build
+@@ -3616,6 +3616,7 @@
+     'hw/char',
+     'hw/display',
+     'hw/display/rv530',
++    'hw/display/evergreen',
+     'hw/dma',
+     'hw/fsi',
+     'hw/hexagon',
+--- a/hw/display/meson.build
++++ b/hw/display/meson.build
+@@ -162,3 +162,14 @@
+   system_ss.add(when: 'CONFIG_RV530', if_true: [files('rv530/r5xx_vk_mac.m'),
+                 dependency('appleframeworks', modules: ['Metal', 'Foundation'])])
+ endif
++# evergreen (radeon-hd5770): the CPU path, and the Vulkan backend for the
++# pixel stage when vulkan and shaderc are found (eg_vk_stub.c otherwise)
++system_ss.add(when: 'CONFIG_RV530', if_true: files(
++  'evergreen/evergreen.c', 'evergreen/eg_cp.c', 'evergreen/eg_dce.c', 'evergreen/eg_tile.c',
++  'evergreen/eg_draw.c', 'evergreen/eg_shader.c', 'evergreen/eg_tex.c', 'evergreen/eg_hdp.c',
++  'evergreen/eg_vk_ps.c'))
++if rv530_vulkan.found() and rv530_shaderc.found()
++  system_ss.add(when: 'CONFIG_RV530', if_true: [files('evergreen/eg_vk.c'), rv530_vulkan, rv530_shaderc])
++else
++  system_ss.add(when: 'CONFIG_RV530', if_true: files('evergreen/eg_vk_stub.c'))
++endif

@@ -159,6 +159,14 @@ launchctl load -w /Library/LaunchDaemons/local.sshd.plist
 install DVD, under Optional Installs. Then run `scripts/agent-update.sh` on the
 host, or run `agent/install.sh` in the guest.
 
+## The Radeon HD 5770 (experimental)
+
+`DISPLAY_MODE=hd5770` starts the VM on the emulated Radeon HD 5770 instead of
+the X1600. It needs a VBIOS dump of the Apple card and a second boot volume
+made with `SL_FBNAME=Hoolock SL_GPUMODEL="ATI Radeon HD 5770"` (`ESP` selects
+it). See
+[docs/EVERGREEN.md](../docs/EVERGREEN.md).
+
 ## Mac OS X 10.7 Lion
 
 Lion (10.7.5) installs and runs on the same card with Quartz Extreme and

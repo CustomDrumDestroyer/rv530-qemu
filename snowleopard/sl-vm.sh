@@ -12,6 +12,12 @@
 #   DISPLAY_MODE=std  sl-vm.sh       # -vga std (installation, reference)
 #   DISPLAY_MODE=rv530 sl-vm.sh      # emulated Radeon X1600 as the only GPU
 #   DISPLAY_MODE=both sl-vm.sh       # -vga std for the firmware + rv530
+#   DISPLAY_MODE=hd5770 sl-vm.sh     # emulated Radeon HD 5770 (evergreen device,
+#                                    # work in progress): ROM5770 is Apple's VBIOS
+#                                    # cut down by scripts/vbios-x86only.py (not
+#                                    # included), EGOPTS extra device options, and
+#                                    # an ESP built with SL_FBNAME=Hoolock
+#                                    # SL_GPUMODEL="ATI Radeon HD 5770"
 #
 # Environment: OSK (the Apple SMC key, required), WORK (the VM's own
 # directory for the disk, NVRAM, sockets and logs; default work/, e.g.
@@ -124,7 +130,9 @@ rv530) DISP=(-vga none -device $RP
              -device rv530,id=gpu,bus=rp1,romfile="$ROM",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
 both)  DISP=(-vga std -device $RP
              -device rv530,id=gpu,bus=rp1,romfile="$ROM",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
-*) echo "DISPLAY_MODE must be std, rv530 or both" >&2; exit 1 ;;
+hd5770) DISP=(-vga none -device $RP
+             -device radeon-hd5770,id=gpu,bus=rp1,romfile="${ROM5770:-$HERE/../rom/nextgen/AppleHD_5770_1024_MB-x86only.rom}",xres=${XRES:-1440},yres=${YRES:-900}${EGOPTS:+,$EGOPTS}) ;;
+*) echo "DISPLAY_MODE must be std, rv530, both or hd5770" >&2; exit 1 ;;
 esac
 # AUTORESIZE=1 with the Cocoa window: it can only be resized with Zoom To Fit
 if [ -n "${AUTORESIZE:-}" ]; then

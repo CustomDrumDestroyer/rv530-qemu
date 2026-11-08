@@ -30,6 +30,8 @@ fi
 cd qemu-11.1.3
 rm -rf hw/display/rv530
 cp -r "$HERE/qemu/hw/display/rv530" hw/display/rv530
+rm -rf hw/display/evergreen
+cp -r "$HERE/qemu/hw/display/evergreen" hw/display/evergreen
 if ! grep -q "hw/display/rv530" meson.build; then
     patch -p1 < "$HERE/qemu/patches/0001-build-glue-rv530.patch"
 fi
@@ -57,6 +59,9 @@ fi
 
 if ! grep -q "check_clean" accel/tcg/cputlb.c; then
     patch -p1 < "$HERE/qemu/patches/0009-tcg-notdirty-race.patch"
+fi
+if ! grep -q "hw/display/evergreen" meson.build; then
+    patch -p1 < "$HERE/qemu/patches/0010-build-glue-evergreen.patch"
 fi
 
 case "$(uname -s)" in

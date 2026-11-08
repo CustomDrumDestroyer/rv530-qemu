@@ -36,6 +36,13 @@ The state of each module of the RV530 (Radeon X1600) device model.
 | `r5xx_clip.c` | Clipboard peer for the guest agent (`snowleopard/agent`) |
 | `r5xx_regnames.c` | Register names for traces (made by `qemu/hw/display/rv530/scripts/gen_regnames.py`) |
 
+## Radeon HD 5770 device (`qemu/hw/display/evergreen/`)
+
+Experimental. Mac OS X 10.6 runs on it with Quartz Extreme and Core Image, and
+the pixel stage runs on the host GPU through Vulkan. The CPU runs the vertex
+shader. [EVERGREEN.md](EVERGREEN.md) gives the setup, the test results, the
+debugging tools, and the known gaps.
+
 ## Tests
 
 | Suite | Result |

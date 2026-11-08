@@ -133,7 +133,7 @@ if karch == 'i386':
 # ATISupport creates one IOFBStub per "@N," prefix and ATIFramebuffer matches
 # on its name.  The rv530 sits behind the q35 root port at 00:01.0.
 fb = 'ATY,' + os.environ.get('SL_FBNAME', 'Wormy')
-gpu = {'model': 'ATI Radeon X1600', 'name': fb + 'Parent', 'device_type': fb + 'Parent',
+gpu = {'model': os.environ.get('SL_GPUMODEL', 'ATI Radeon X1600'), 'name': fb + 'Parent', 'device_type': fb + 'Parent',
        'VRAM,totalsize': (256 << 20).to_bytes(4, 'little'),
        'ATY,Copyright': b'Copyright AMD Inc. All Rights Reserved. 2005-2009',
        'ATY,PlatformInfo': bytes([int(os.environ.get('SL_FBCFG', '0'))]) + bytes(127),   # [0] = connector config index

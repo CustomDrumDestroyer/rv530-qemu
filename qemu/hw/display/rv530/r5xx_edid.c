@@ -23,8 +23,9 @@
 
 #include "qemu/osdep.h"
 #include "hw/i2c/i2c.h"
+#include "qemu/bswap.h"
 #include "migration/vmstate.h"
-#include "rv530.h"
+#include "r5xx_edid.h"
 
 typedef struct EdidMode {
     uint16_t w, h, hz;
