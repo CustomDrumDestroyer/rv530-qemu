@@ -38,9 +38,8 @@ The state of each module of the RV530 (Radeon X1600) device model.
 
 ## Radeon HD 5770 device (`qemu/hw/display/evergreen/`)
 
-Experimental. Mac OS X 10.6 runs on it with Quartz Extreme and Core Image, and
-the pixel stage runs on the host GPU through Vulkan. The CPU runs the vertex
-shader. [EVERGREEN.md](EVERGREEN.md) gives the setup, the test results, the
+Experimental. Mac OS X 10.6 and 10.7 run on it with Quartz Extreme and Core
+Image. The vertex and pixel shaders run on the host GPU through Vulkan. [EVERGREEN.md](EVERGREEN.md) gives the setup, the test results, the
 debugging tools, and the known gaps.
 
 ## Tests

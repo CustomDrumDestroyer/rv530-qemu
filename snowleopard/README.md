@@ -256,7 +256,8 @@ again without `SL_PICKER`. Keep `SL_KARCH=i386` and `SL_UUID`.
 
 Notes from the 10.5.0 installation:
 
-- Setup Assistant can stop at "How Do You Connect?" with a spinning cursor.
+- Setup Assistant can stop at "How Do You Connect?" with a spinning cursor
+  ([#14](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/14)).
   In that case, make the account from the Terminal of the install DVD. Make
   a user plist in `/var/db/dslocal/nodes/Default/users` and its shadow hash.
   Add the user to `admin` and make `/var/db/.AppleSetupDone`.
@@ -272,7 +273,8 @@ address of the VRAM from `CONFIG_APER_0_BASE`, not from the PCI BAR
 (`rv530.c`). The `tests/` programs give the same results as on 10.6. The
 Core Image blur is exact. One difference remains: `glReadPixels` from an
 RGBA8 FBO gives green and blue in the wrong order (`gltexfmt` prints
-`ff0080`). When the driver draws the texture, the colors are correct.
+`ff0080`, [#13](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/13)).
+When the driver draws the texture, the colors are correct.
 
 ## Card identity
 

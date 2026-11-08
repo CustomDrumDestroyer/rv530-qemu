@@ -317,8 +317,11 @@ These measurements show where the time goes in Nexuiz now:
   work is not the limit (see [Performance](#performance)).
 - The first boot after a change of `eg_vk_frag.glsl` or of the host GPU
   driver compiles every pipeline again. While it does, a guest with more
-  than one vCPU can panic ("Unresponsive processor").
+  than one vCPU can panic ("Unresponsive processor",
+  [#15](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/15)). Boot
+  one time with `SMP=1` to fill the caches.
 - The display does not wait for the GPU, so a screenshot or a scanout can
-  show a surface while the GPU draws into it (tearing).
+  show a surface while the GPU draws into it (tearing,
+  [#16](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/16)).
 - With `EG_VK_VERIFY` and more than one vCPU, Mac OS X can panic.
 - We did not test macOS hosts with this device.

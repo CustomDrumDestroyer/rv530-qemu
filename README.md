@@ -1,4 +1,4 @@
-# rv530-qemu: Mac OS X Snow Leopard with GPU acceleration in QEMU
+# rv530-qemu: Mac OS X Snow Leopard (and more) with GPU acceleration in QEMU
 
 Run Mac OS X 10.6 (Snow Leopard) in a QEMU virtual machine with
 **Quartz Extreme and Core Image enabled**. You do not need GPU passthrough.
@@ -58,9 +58,9 @@ In a Mac OS X 10.6.8 guest:
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-105-leopard).
 
 **Experimental:** a second device, `radeon-hd5770`, emulates an ATI Radeon
-HD 5770 (Evergreen). Snow Leopard runs on it with Quartz Extreme and Core
-Image, and the pixel work runs on the host GPU. It needs a VBIOS dump of the
-Apple card. See [docs/EVERGREEN.md](docs/EVERGREEN.md).
+HD 5770 (Evergreen). Mac OS X 10.6 and 10.7 run on it with Quartz Extreme and
+Core Image. The vertex and pixel shaders run on the host GPU. It needs a VBIOS
+dump of the Apple card. See [docs/EVERGREEN.md](docs/EVERGREEN.md).
 
 The [Issues](https://github.com/CustomDrumDestroyer/rv530-qemu/issues) page
 lists the known bugs. [We welcome contributions](#contributing).
@@ -363,9 +363,11 @@ MoltenVK, `tests/vk` does not run its tests and shows the reason.
 
 ## Screenshots
 
-All screenshots come from guests on the Vulkan backend. The first two
-screenshots come from the Linux guest. The last five come from Mac OS X 10.5
-and 10.7. All other screenshots come from Mac OS X 10.6.8.
+All screenshots come from the emulated Radeon X1600 on the Vulkan backend.
+Each subsection names the guest. [docs/EVERGREEN.md](docs/EVERGREEN.md) has
+screenshots of the experimental Radeon HD 5770.
+
+### Linux
 
 ![Linux fbcon on the emulated card](docs/img/fbcon-dvi-1280x800.png)
 
@@ -374,6 +376,8 @@ Linux `radeon` KMS with fbcon.
 ![X with EXA](docs/img/x-exa-dvi.png)
 
 X with the EXA acceleration of the radeon driver.
+
+### Mac OS X 10.6.8 (Snow Leopard)
 
 ![Chess: lit, depth-tested 3D pieces from Apple's fixed-function vertex programs](docs/img/snowleopard-qe-chess.png)
 
@@ -403,6 +407,8 @@ The full-screen menu of Front Row.
 QuickTime Player X plays the sample movie from Apple. Core Video shows the
 frames through OpenGL as Y'CbCr textures.
 
+### Mac OS X 10.5.0 (Leopard)
+
 ![Chess on Mac OS X 10.5](docs/img/leopard-qe-chess.png)
 
 Chess on Mac OS X 10.5.0 at 1440 x 900, with the translucent menu bar and
@@ -416,6 +422,8 @@ composition with Core Image feedback and blur, in full screen.
 ![Front Row on Mac OS X 10.5](docs/img/leopard-qe-frontrow.png)
 
 The full-screen menu of Front Row on Mac OS X 10.5.0.
+
+### Mac OS X 10.7.5 (Lion)
 
 ![Mission Control on Mac OS X 10.7](docs/img/lion-qe-missioncontrol.png)
 
