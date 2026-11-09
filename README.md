@@ -59,8 +59,9 @@ In a Mac OS X 10.6.8 guest:
   [snowleopard/README.md](snowleopard/README.md#mac-os-x-105-leopard).
 
 **Experimental:** a second device, `radeon-hd5770`, emulates an ATI Radeon
-HD 5770 (Evergreen). Mac OS X 10.6 and 10.7 run on it with Quartz Extreme and
-Core Image. The vertex and pixel shaders run on the host GPU. It uses its own
+HD 5770 (Evergreen). Mac OS X 10.6, 10.7, and OS X 10.9 (Mavericks) run on it
+with Quartz Extreme and Core Image. The vertex shaders, the pixel shaders, and
+the compute shaders (OpenCL in 10.9) run on the host GPU. It uses its own
 synthetic AtomBIOS, so you do not need a VBIOS dump. See
 [docs/EVERGREEN.md](docs/EVERGREEN.md).
 
@@ -410,9 +411,10 @@ MoltenVK, `tests/vk` does not run its tests and shows the reason.
 
 ## Screenshots
 
-All screenshots come from the emulated Radeon X1600 on the Vulkan backend.
-Each subsection names the guest. [docs/EVERGREEN.md](docs/EVERGREEN.md) has
-screenshots of the experimental Radeon HD 5770.
+The screenshots come from the emulated Radeon X1600 on the Vulkan backend.
+The exception is OS X 10.9 (Mavericks), which runs on the experimental Radeon
+HD 5770. Each subsection names the guest. [docs/EVERGREEN.md](docs/EVERGREEN.md)
+has more screenshots of the HD 5770.
 
 ### Linux
 
@@ -481,6 +483,27 @@ Mission Control on Mac OS X 10.7.5, with Chess open. The guest runs at
 
 Launchpad on Mac OS X 10.7.5. Core Image blurs the desktop behind the icons.
 The guest runs at 2560 x 1440.
+
+### OS X 10.9 (Mavericks), on the Radeon HD 5770
+
+![Mission Control in Mavericks on the emulated HD 5770](docs/img/mavericks-qe-missioncontrol.png)
+
+Mission Control in OS X 10.9, with Chess and the Nexuiz `bench1` demo open.
+The game draws in its window while Mission Control shows it. The guest runs at
+1920 x 1080.
+
+![Nexuiz in Mavericks on the emulated HD 5770](docs/img/mavericks-gl-nexuiz.png)
+
+The Nexuiz `bench1` demo in OS X 10.9, in a 1280 x 720 window.
+
+![Launchpad in Mavericks on the emulated HD 5770](docs/img/mavericks-ci-launchpad.png)
+
+Launchpad in OS X 10.9. Launchpad blurs the desktop behind the icons.
+
+![The Arabesque screen saver in Mavericks on the emulated HD 5770](docs/img/mavericks-ci-arabesque.png)
+
+The Arabesque screen saver in OS X 10.9: Quartz Composer with Core Image
+feedback and blur.
 
 ## Contributing
 

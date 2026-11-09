@@ -137,11 +137,38 @@ We tested these items in Mavericks:
 
 | Item | Result |
 | --- | --- |
-| Login window, desktop, menu bar, Dock | Correct at 1440 x 900 |
-| Mission Control | Correct |
+| Login window, desktop, menu bar, Dock | Correct at 1440 x 900 and 1920 x 1080 |
+| Mission Control, Launchpad | Correct (see the screenshots) |
 | Chess | Correct |
+| Screen savers | Flurry and Arabesque are correct |
 | `gltest`, `glms`, `gltex`, `gltexfmt`, `glstrip`, `gltexyuv` | The same results as in 10.6 |
 | Core Image | `ci_blur_check.py`: max diff 0. `ci_blur_bench.py`: 10-13 ms per frame, 4 vCPUs |
+| Nexuiz `bench1` demo | Correct. Approximately 18 frames per second at 1280 x 720, 4 vCPUs (wall time of the demo, with the load time) |
+| Maps | The title bar and the compass show wrong pixels |
+
+In 10.9, the frame rate that Nexuiz shows and logs is not correct. The game
+measures 190-210 s for a demo that takes less time. Use the wall time.
+
+The screenshots below are from a guest at 1920 x 1080 with 4 vCPUs.
+
+![Mission Control in Mavericks on the emulated HD 5770](img/mavericks-qe-missioncontrol.png)
+
+Mission Control in Mavericks, with Chess and the Nexuiz `bench1` demo open.
+The game draws in its window while Mission Control shows it.
+
+![Nexuiz in Mavericks on the emulated HD 5770](img/mavericks-gl-nexuiz.png)
+
+The Nexuiz `bench1` demo in a 1280 x 720 window. The game uses lighting,
+shadows, and particle effects on OpenGL.
+
+![Launchpad in Mavericks on the emulated HD 5770](img/mavericks-ci-launchpad.png)
+
+Launchpad in Mavericks. Launchpad blurs the desktop behind the icons.
+
+![The Arabesque screen saver in Mavericks on the emulated HD 5770](img/mavericks-ci-arabesque.png)
+
+The Arabesque screen saver in Mavericks. It is a Quartz Composer composition
+with Core Image feedback and blur.
 
 ## The option ROM
 
