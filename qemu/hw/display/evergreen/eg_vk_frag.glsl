@@ -84,7 +84,32 @@ layout(std430, set = 0, binding = 5) readonly buffer GartBuf { uint gart[]; };
  * between draws make them safe) */
 layout(std430, set = 0, binding = 6) restrict readonly buffer VramTex { uint vram_tex[]; };
 layout(std430, set = 0, binding = 7) restrict readonly buffer SysTex { uint sysram_tex[]; };
-layout(push_constant) uniform PC { uint draw; } pc;
+/*
+ * draw: the EvkDraw slot.  With EVK_NO_PERVERTEX also: first, the first
+ * vertex (or index) of the draw; outbase and nidx, where the GPU VS puts
+ * the outputs of each corner (vsout).
+ */
+layout(push_constant) uniform PC { uint draw; uint first; uint outbase; uint nidx; } pc;
+#ifdef EVK_NO_PERVERTEX
+/*
+ * Without per-vertex inputs (Metal has none): each corner of a triangle
+ * has its own vertex invocation and its PS inputs in a buffer.  The CPU VS
+ * path has them in verts[] (the vertex buffer).  The GPU VS draws
+ * non-indexed, fetches its index from idxv[], and writes its outputs to
+ * vsout[].  v_base is the slot of the triangle's first corner.
+ */
+#if !defined(EVK_VS) && !defined(EVK_CS)
+struct VtxIn { vec4 pos; uvec4 misc; vec4 p[EVK_MAX_PARAMS]; };
+layout(std430, set = 0, binding = 2) readonly buffer VtxBuf { VtxIn verts[]; };
+layout(std430, set = 0, binding = 9) readonly buffer VsOutBuf { vec4 vsout[]; };
+#elif defined(EVK_VS)
+layout(std430, set = 0, binding = 9) writeonly buffer VsOutBuf { vec4 vsout[]; };
+layout(std430, set = 0, binding = 10) readonly buffer IdxBuf { uint idxv[]; };
+#endif
+#define EVK_VID idxv[gl_VertexIndex]
+#else
+#define EVK_VID uint(gl_VertexIndex)
+#endif
 #if !defined(EVK_VS) && defined(EVK_MARK_DIRTY)
 /* one bit per 4 KiB page of the VRAM copy that a fragment wrote: the
  * copy-back at the end of the batch copies only these pages */
@@ -94,6 +119,10 @@ layout(std430, set = 0, binding = 8) buffer DirtyBuf { uint vram_dirty[]; };
 #ifdef EVK_CS
 /* the thread: its index in the group and its group (R0.xyz, R1.xyz) */
 uvec3 cs_l, cs_g;
+#elif !defined(EVK_VS) && defined(EVK_NO_PERVERTEX)
+layout(location = EVK_MAX_PARAMS) flat in uint v_front;
+layout(location = EVK_MAX_PARAMS + 1) noperspective in float v_z;
+layout(location = EVK_MAX_PARAMS + 2) flat in uint v_base;
 #elif !defined(EVK_VS)
 /*
  * The PS inputs of the triangle's three vertices, in submission order.
@@ -117,7 +146,12 @@ layout(location = EVK_MAX_PARAMS) flat in uint v_front;
 layout(location = EVK_MAX_PARAMS + 1) noperspective in float v_z;
 #else
 /* to the fragment shader: v_p<n>, v_front, v_z */
+#ifdef EVK_NO_PERVERTEX
+vec4 o_p[EVK_MAX_PARAMS];               /* to vsout[] */
+layout(location = EVK_MAX_PARAMS + 2) flat out uint o_base;
+#else
 layout(location = 0) out vec4 o_p[EVK_MAX_PARAMS];
+#endif
 layout(location = EVK_MAX_PARAMS) flat out uint o_front;
 layout(location = EVK_MAX_PARAMS + 1) noperspective out float o_z;
 uvec4 EPOS[4];          /* VS exports POS 60-63 */
@@ -270,14 +304,14 @@ void wr32_masked(bool g, uint a, uint m, uint v)
     }
 }
 /* 1, 2 or 4 naturally aligned bytes */
-uint rdn(bool g, uint a, uint bytes)
+uint evk_rdn(bool g, uint a, uint bytes)
 {
     uint w = rd32(g, a);
     if (bytes >= 4u) return w;
     uint sh = (a & 3u) * 8u;
     return (w >> sh) & (bytes == 2u ? 0xffffu : 0xffu);
 }
-void wrn(bool g, uint a, uint bytes, uint v)
+void evk_wrn(bool g, uint a, uint bytes, uint v)
 {
     if (bytes >= 4u) { wr32(g, a, v); return; }
     uint sh = (a & 3u) * 8u;
@@ -466,6 +500,35 @@ float ufloat_to_float(uint v, uint mbits)
     if (e == 31u) return m != 0u ? uintBitsToFloat(0x7fc00000u) : uintBitsToFloat(0x7f800000u);
     return ldexp(float(m | (1u << mbits)), int(e) - 15 - int(mbits));
 }
+#ifndef EVK_HAS_F64
+/*
+ * Without float64 (Apple GPUs). n / d rounded to nearest, for n and d that
+ * float holds exactly: a division of the GPU can be off by more than one
+ * ulp, and the exact residual from fma() corrects it.
+ */
+float div_rn(float n, float d)
+{
+    float q = n / d;
+    float r = fma(-q, d, n);
+    return q + r / d;
+}
+/* roundEven(x * m) of the exact product, m < 2^24 */
+uint mul_round_even(float x, float m)
+{
+    float p = x * m;
+    float e = fma(x, m, -p);        /* p + e == x * m exactly */
+    float r = roundEven(p);
+    float d = p - r;                /* exact; |e| is at most half an ulp of p */
+    /* only an exact half in p can round the wrong way: e decides */
+    if (d == 0.5 && e > 0.0) {
+        r += 1.0;
+    } else if (d == -0.5 && e < 0.0) {
+        r -= 1.0;
+    }
+    return uint(r);
+}
+#endif
+
 float srgb_to_linear(float c)
 {
     return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -509,12 +572,23 @@ uvec4 format_decode(uint fmt, uvec4 p, uint numf, uint comp)
         } else if (numf == 2u) {
             o[c] = U(sg == 1u ? float(sv) : float(raw));
         } else if (sg == 1u) {
+#ifdef EVK_HAS_F64
             double d = double(sv) / double((1u << (w - 1u)) - 1u);
             o[c] = U(float(max(d, -1.0lf)));
+#else
+            o[c] = U(max(div_rn(float(sv), float((1u << (w - 1u)) - 1u)), -1.0));
+#endif
         } else {
+#ifdef EVK_HAS_F64
             double maxu = w >= 32u ? 4294967295.0lf : double((1u << w) - 1u);
             double d = double(raw) / maxu;
             o[c] = U(float(sg == 2u ? d * 2.0lf - 1.0lf : d));
+#else
+            /* exact for w <= 24; 32-bit components can be off by one ulp */
+            float maxu = w >= 32u ? 4294967295.0 : float((1u << w) - 1u);
+            o[c] = U(sg == 2u ? div_rn(2.0 * float(raw) - maxu, maxu)
+                              : div_rn(float(raw), maxu));
+#endif
         }
     }
     return o;
@@ -624,7 +698,7 @@ uvec4 texel(uint s, uint lv, Tile tl, int x, int y, int slice)
 }
 
 /* returns the wrapped coordinate; border set when outside a border mode */
-int wrap(int i, int n, uint mode, out bool border)
+int evk_wrap(int i, int n, uint mode, out bool border)
 {
     border = false;
     if (mode == 0u) {
@@ -648,7 +722,7 @@ int wrap(int i, int n, uint mode, out bool border)
     return clamp(i, 0, n - 1);
 }
 
-uvec4 border_color(uint type)
+uvec4 evk_border_color(uint type)
 {
     float c = type == 2u ? 1.0 : 0.0;
     return U(vec4(c, c, c, type == 0u ? 0.0 : 1.0));
@@ -663,8 +737,8 @@ uvec4 sample_level(uint s, uint ss, uint lv, float u, float v, int slice, bool l
     bool bx, by;
     if (dim == 0u || dim == 4u) h = 1;
     if (!linear) {
-        int x = wrap(int(floor(u)), w, cx, bx), y = wrap(int(floor(v)), h, cy, by);
-        if (bx || by) return border_color(bt);
+        int x = evk_wrap(int(floor(u)), w, cx, bx), y = evk_wrap(int(floor(v)), h, cy, by);
+        if (bx || by) return evk_border_color(bt);
         return texel(s, lv, tl, x, y, slice);
     }
     float fu = u - 0.5, fv = v - 0.5;
@@ -672,8 +746,8 @@ uvec4 sample_level(uint s, uint ss, uint lv, float u, float v, int slice, bool l
     float ax = fu - float(x0), ay = fv - float(y0);
     uvec4 t[4];
     [[dont_unroll]] for (int k = 0; k < 4; k++) {
-        int x = wrap(x0 + (k & 1), w, cx, bx), y = wrap(y0 + (k >> 1), h, cy, by);
-        t[k] = (bx || by) ? border_color(bt) : texel(s, lv, tl, x, y, slice);
+        int x = evk_wrap(x0 + (k & 1), w, cx, bx), y = evk_wrap(y0 + (k >> 1), h, cy, by);
+        t[k] = (bx || by) ? evk_border_color(bt) : texel(s, lv, tl, x, y, slice);
     }
     if (tex_int(s)) return t[0];
     vec4 top = F(t[0]) + (F(t[1]) - F(t[0])) * ax;
@@ -699,7 +773,7 @@ vec4 quad_grad(vec4 c, bool horiz)
     bool second = horiz ? (int(gl_FragCoord.x) & 1) != 0 : (int(gl_FragCoord.y) & 1) != 0;
     return second ? c - o : o - c;
 }
-bool quad_any(bool b)
+bool evk_quad_any(bool b)
 {
     uint v = b ? 1u : 0u;
     v |= subgroupQuadSwapHorizontal(v);
@@ -713,7 +787,7 @@ void quad_corners(vec2 c, out vec2 tl, out vec2 tr, out vec2 bl)
     tl = c; tr = c; bl = c;
 }
 vec4 quad_grad(vec4 c, bool horiz) { return vec4(0.0); }
-bool quad_any(bool b) { return b; }
+bool evk_quad_any(bool b) { return b; }
 #endif
 
 float tex_compare(uint func, float ref, float v)
@@ -934,11 +1008,37 @@ uint bfe_i(uint a, uint off, uint w)
     return w != 0u ? uint(int(a << (32u - off - w)) >> (32u - w)) : 0u;
 }
 uint ffbh(uint v) { return v != 0u ? 31u - uint(findMSB(v)) : 0xffffffffu; }
+#ifdef EVK_HAS_F64
 uint recip_u(uint a) { return a != 0u ? uint(4294967296.0lf / double(a)) : 0u; }
 uint recip_i(uint a)
 {
     return a != 0u ? uint(int(4294967296.0lf / double(int(a)))) : 0u;
 }
+#else
+/* floor(2^32 / a) with integers; 2^32 saturates to 0xffffffff, as the
+ * float-to-integer conversion of the CPU path does on arm64 hosts */
+uint recip_u(uint a)
+{
+    if (a <= 1u) {
+        return a == 0u ? 0u : 0xffffffffu;
+    }
+    uint q = 0xffffffffu / a;
+    return 0xffffffffu - q * a == a - 1u ? q + 1u : q;
+}
+uint recip_i(uint a)
+{
+    int ia = int(a);
+    if (ia == 0) {
+        return 0u;
+    }
+    uint m = ia < 0 ? 0u - a : a;
+    uint q = m == 1u ? 0u : recip_u(m);     /* m == 1: 2^32, saturates below */
+    if (ia > 0) {
+        return m <= 2u ? 0x7fffffffu : q;
+    }
+    return m == 1u ? 0x80000000u : 0u - q;
+}
+#endif
 uint mulhi_i(uint a, uint b) { int hi, lo; imulExtended(int(a), int(b), hi, lo); return uint(hi); }
 uint mulhi_u(uint a, uint b) { uint hi, lo; umulExtended(a, b, hi, lo); return hi; }
 uint mulhi_u24(uint a, uint b) { uint hi, lo; umulExtended(a & 0xffffffu, b & 0xffffffu, hi, lo); return hi; }
@@ -963,7 +1063,16 @@ float cube_res(float vx, float vy, float vz, int k)
  * draw puts the provoking vertex last (the CPU path copies it to all
  * three).
  */
+#ifdef EVK_NO_PERVERTEX
+vec4 vparam_buf(uint k, uint n)
+{
+    return MISC(EVK_M_GPU_VS) != 0u ? vsout[(v_base + k) * uint(EVK_MAX_PARAMS) + n]
+                                    : verts[v_base + k].p[n];
+}
+#define vparam(k, n) vparam_buf((((MISC(EVK_M_FLATMASK) >> (n)) & 1u) != 0u) ? 2u : uint(k), uint(n))
+#else
 #define vparam(k, n) ((((MISC(EVK_M_FLATMASK) >> (n)) & 1u) != 0u) ? v_p##n[2] : v_p##n[k])
+#endif
 
 /* the triangle faces the viewer (FRONT_FACE_ENA, two-sided stencil) */
 bool is_front()
@@ -1024,13 +1133,13 @@ bool db_test(int x, int y, float z, bool front)
     float zd = 0.0;
     if (z_valid) {
         zoff = tile_offset(D.zb.tile, uint(x), uint(y));
-        zraw = rdn(zg, D.zb.base + zoff, zfmt == 1u ? 2u : 4u);
+        zraw = evk_rdn(zg, D.zb.base + zoff, zfmt == 1u ? 2u : 4u);
         zd = zfmt == 1u ? float(zraw & 0xffffu) / 65535.0 :
              zfmt == 2u ? float(zraw & 0xffffffu) / 16777215.0 : F(zraw);
     }
     if (s_valid) {
         soff = tile_offset(D.sb.tile, uint(x), uint(y));
-        st = rdn(sg, D.sb.base + soff, 1u);
+        st = evk_rdn(sg, D.sb.base + soff, 1u);
     }
     bool zclear = MISC(EVK_M_Z_CLEAR) != 0u, sclear = MISC(EVK_M_S_CLEAR) != 0u;
     if (zclear && z_valid) zd = MISCF(EVK_M_Z_CLEAR_VAL);
@@ -1058,10 +1167,10 @@ bool db_test(int x, int y, float z, bool front)
     if (z_valid && (zwr || zclear)) {
         uint v = zfmt == 1u ? uint(roundEven(zd * 65535.0)) :
                  zfmt == 2u ? ((zraw & 0xff000000u) | uint(roundEven(zd * 16777215.0))) : U(zd);
-        wrn(zg, D.zb.wbase + zoff, zfmt == 1u ? 2u : 4u, v);
+        evk_wrn(zg, D.zb.wbase + zoff, zfmt == 1u ? 2u : 4u, v);
     }
     if (s_valid && (MISC(EVK_M_S_ENABLE) != 0u || sclear)) {
-        wrn(sg, D.sb.wbase + soff, 1u, st);
+        evk_wrn(sg, D.sb.wbase + soff, 1u, st);
     }
     return pass;
 }
@@ -1079,7 +1188,7 @@ bool db_early_fail(int x, int y, float z)
     if (x < 0 || y < 0 || uint(x) >= D.zb.tile.pitch || uint(y) >= D.zb.tile.height) return false;
     z = clamp(z, 0.0, 1.0);
     bool zg = (D.zb.flags & EVK_SF_GART) != 0u;
-    uint zraw = rdn(zg, D.zb.base + tile_offset(D.zb.tile, uint(x), uint(y)), zfmt == 1u ? 2u : 4u);
+    uint zraw = evk_rdn(zg, D.zb.base + tile_offset(D.zb.tile, uint(x), uint(y)), zfmt == 1u ? 2u : 4u);
     float zd = zfmt == 1u ? float(zraw & 0xffffu) / 65535.0 :
                zfmt == 2u ? float(zraw & 0xffffffu) / 16777215.0 : F(zraw);
     return !cmp_func(MISC(EVK_M_Z_FUNC), z, zd);
@@ -1095,7 +1204,7 @@ uvec4 cb_read(uint n, uint addr)
 {
     bool g = (CB_FLAGS(n) & EVK_SF_GART) != 0u;
     uint bpp = CB_BPP(n);
-    if (bpp <= 4u) return uvec4(rdn(g, addr, bpp), 0u, 0u, 0u);
+    if (bpp <= 4u) return uvec4(evk_rdn(g, addr, bpp), 0u, 0u, 0u);
     uvec4 o = uvec4(0u);
     [[dont_unroll]] for (uint i = 0u; i < bpp / 4u; i++) o[i] = rd32(g, addr + 4u * i);
     return o;
@@ -1105,7 +1214,7 @@ void cb_store(uint n, uint addr, uvec4 v, uvec4 old)
     bool g = (CB_FLAGS(n) & EVK_SF_GART) != 0u;
     uint bpp = CB_BPP(n);
     if (bpp <= 4u) {
-        if (v.x != old.x) wrn(g, addr, bpp, v.x);
+        if (v.x != old.x) evk_wrn(g, addr, bpp, v.x);
         return;
     }
     [[dont_unroll]] for (uint i = 0u; i < bpp / 4u; i++) {
@@ -1174,7 +1283,12 @@ uvec4 cb_pack(uint n, uvec4 inb, uvec4 raw, uint mask)
         } else {
             if (number == 6u && comp < 3u) f = linear_to_srgb(f);
             float cl = isnan(f) ? 0.0 : clamp(f, 0.0, 1.0);
+#ifdef EVK_HAS_F64
             v = uint(roundEven(double(cl) * double(m)));
+#else
+            v = m < 0x1000000u ? mul_round_even(cl, float(m))
+                               : uint(roundEven(cl * float(m)));
+#endif
         }
         if (wide) raw[k] = v; else raw = setbits128(raw, shift, w, v);
         shift += w;
@@ -1324,7 +1438,7 @@ void main()
     if (MISC(EVK_M_EARLY_Z) != 0u) {
         bool rej = gl_HelperInvocation ||
                    db_early_fail(int(gl_FragCoord.x), int(gl_FragCoord.y), v_z);
-        skip = !quad_any(!rej);
+        skip = !evk_quad_any(!rej);
     }
 #endif
     if (!skip) {
@@ -1426,5 +1540,16 @@ void main()
             o_p[n] = vec4(a, a, a, (dv == 1u || dv == 3u) ? 1.0 : 0.0);
         }
     }
+#ifdef EVK_NO_PERVERTEX
+    {
+        /* this corner's slot; gl_VertexIndex counts the corners from pc.first */
+        uint c = uint(gl_VertexIndex) - pc.first;
+        uint slot = pc.outbase + uint(gl_InstanceIndex) * pc.nidx + c;
+        for (uint n = 0u; n < uint(EVK_MAX_PARAMS); n++) {
+            vsout[slot * uint(EVK_MAX_PARAMS) + n] = o_p[n];
+        }
+        o_base = slot - c % 3u;
+    }
+#endif
 }
 #endif

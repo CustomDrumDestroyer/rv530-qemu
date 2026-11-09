@@ -170,6 +170,40 @@ Launchpad in Mavericks. Launchpad blurs the desktop behind the icons.
 The Arabesque screen saver in Mavericks. It is a Quartz Composer composition
 with Core Image feedback and blur.
 
+## macOS hosts (Apple silicon, TCG)
+
+The device runs on an Apple silicon Mac under TCG, with the pixel work on the
+GPU through MoltenVK. We tested Snow Leopard (10.6.8) on an Apple M4:
+
+| Item | Result |
+| --- | --- |
+| Boot, desktop, menu bar, Dock | Correct, 1 and 4 vCPUs |
+| System Profiler | ATI Radeon HD 5770, 1024 MB |
+| Quartz Extreme | `CGDisplayUsesOpenGLAcceleration` is 1 |
+| Chess | Correct. All draws on the GPU (`EG_PROFILE`) |
+| `EG_VK_VERIFY` (1 vCPU, 42650 GPU draws) | 7211 draws have 1-bit differences in a few bytes (median 0.006% of the bytes). 16 draws have larger differences (see [Known gaps](#known-gaps)) |
+
+Metal does not have some features that the backend uses on other GPUs. On
+MoltenVK the backend does these things differently:
+
+- **No float64.** Apple GPUs do not have it. The template then uses exact
+  32-bit code for the integer reciprocals, the normalization of vertex
+  formats, and the rounding of color writes (`EVK_HAS_F64` is not set).
+- **No per-vertex fragment inputs** (`pervertexEXT`). The pixel shader reads
+  the three corners of its triangle from buffers instead
+  (`EVK_NO_PERVERTEX`). The CPU vertex shader path reads them from the vertex
+  buffer. The GPU vertex shader draws without an index buffer: each corner
+  gets its own invocation, reads its index, and writes its outputs to a
+  buffer. A flat input gives the slot of the first corner.
+- **Portability.** The instance enables portability enumeration, the device
+  enables `VK_KHR_portability_subset`, and Metal fast math is off.
+- **Names.** Some function names of the template are also names in the Metal
+  standard library (`border_color`, `quad_any`, `wrap`, `rdn`, `wrn`). They
+  have the prefix `evk_`.
+
+`EG_VK_PERVERTEX=0` selects the buffer path on other GPUs too, for example to
+compare the two paths on Linux.
+
 ## The option ROM
 
 Real VBIOS images are copyrighted and are not part of this repository.
@@ -356,6 +390,8 @@ barriers, or atomic RAT operations.
 | `EG_VK_VERIFY=1` | Runs each GPU draw on the CPU path too, from the same VRAM, and logs the bytes that are different. The CPU result stays. Use `SMP=1`: the extra work can make a guest with more vCPUs panic |
 | `EG_VK_SYNC_COMPILE=1` | Compiles each pixel shader before its draw. Use it with `EG_VK_VERIFY`, so that all draws go to the GPU |
 | `EG_VK_DUMP_DIR=dir` | Use with `EG_VK_VERIFY`. For each program with a difference, it writes the microcode (`.bin`), the GLSL, the state, the surfaces, and a `.replay` file. The surfaces are from the CPU and the GPU, also as PPM files |
+| `EG_VK_PERVERTEX=0` or `1` | 0: the PS reads the triangle corners from buffers (the MoltenVK path). 1: per-vertex inputs. The default is 0 on MoltenVK and 1 on other drivers |
+| `EG_VK_DUMP_FAILED=file` | Writes the source of a shader that does not compile to `file`. When the driver does not accept a pipeline, writes its sources to `file.frag` and `file.vert` |
 | `EG_PROFILE=1` | Every 2 s, logs the CPU time of each part of a draw, the time spent waiting for the GPU, and which callers waited |
 | `EG_VK_STATS=1` | Every 1024 GPU draws, logs the draw, fallback, batch, barrier, and pipeline counts |
 | `EG_VK_TRACE=1` | Logs each batch |
@@ -458,4 +494,10 @@ These measurements show where the time goes in Nexuiz now:
 - In a test after a change of the template, a Lion guest with one vCPU
   restarted one time while it compiled its pipelines again. We could not
   make it occur again.
-- We did not test macOS hosts with this device.
+- On macOS hosts (see [macOS hosts](#macos-hosts-apple-silicon-tcg)), with 4
+  vCPUs, a screen-aligned rectangle showed stale content in Chess one time.
+  In that run, some draws went to the CPU while their pipelines compiled.
+  With `EG_VK_SYNC_COMPILE=1`, all draws went to the GPU and the rectangle
+  did not occur. With `EG_VK_VERIFY`, 16 of 42650 draws (three programs on
+  the same surface) were very different from the CPU result. We did not find
+  the cause of these two problems.

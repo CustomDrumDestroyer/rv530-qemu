@@ -1252,7 +1252,7 @@ static void tr_program(Tr *t)
             if (op != 0x07) {
                 EMIT("    aL = int((lc%d >> 12) & 0xffu);\n", id);
             }
-            EMIT("    bool lrun%d = lcnt%d != 0 && quad_any(%s);\n", id, id, cond);
+            EMIT("    bool lrun%d = lcnt%d != 0 && evk_quad_any(%s);\n", id, id, cond);
             EMIT("    [[dont_unroll]] for (int it%d = 0; lrun%d && it%d < 4096; it%d++) {\n",
                  id, id, id, id);
             break;
@@ -1269,7 +1269,7 @@ static void tr_program(Tr *t)
             }
             EMIT("    act = lsv%d && !lbrk%d;\n", id, id);
             EMIT("    lcnt%d--;\n", id);
-            EMIT("    if (lcnt%d > 0 && quad_any(act && alive)) aL += linc%d; else lrun%d = false;\n",
+            EMIT("    if (lcnt%d > 0 && evk_quad_any(act && alive)) aL += linc%d; else lrun%d = false;\n",
                  id, id, id);
             EMIT("    }\n    act = lsv%d;\n    aL = lsi%d;\n    }\n", id, id);
             break;
@@ -1397,7 +1397,7 @@ char *evk_vs_to_glsl(EvkFetchFn fetch, void *opaque, EvkFetchFn fetch_fs, void *
     }
     /* VGT: R0.x the vertex index, R0.w the instance */
     use_reg(t, 0);
-    str_add(&setup, "    R[0].x = uint(gl_VertexIndex);\n    R[0].w = uint(gl_InstanceIndex);\n");
+    str_add(&setup, "    R[0].x = EVK_VID;\n    R[0].w = uint(gl_InstanceIndex);\n");
     tr_program(t);
     out = tr_finish(t, &setup, "vs_run");
     if (out) {

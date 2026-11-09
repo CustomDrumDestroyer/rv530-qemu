@@ -30,6 +30,7 @@
 #define EVK_IDLE_DRAWS      0           /* draws that start a batch on an idle GPU (0: off) */
 #define EVK_IDX_SLOTS       (1u << 20)  /* GPU VS vertex indices per batch */
 #define EVK_VERT_SLOTS      (1u << 16)  /* EvkVertex entries per batch */
+#define EVK_VSOUT_SLOTS     (1u << 17)  /* GPU VS corner outputs per batch (EVK_NO_PERVERTEX) */
 #define EVK_MAX_DIRTY       8192
 #define EVK_PAGE_SHIFT     12
 /* batches upload all stale pages up front only when they are few */
@@ -125,6 +126,14 @@ struct EgVk {
     EvkBuf vram;                /* imported guest VRAM */
     EvkBuf draws, verts, counts;
     EvkBuf idxbuf;              /* GPU VS indices, EVK_IDX_SLOTS per frame */
+    /*
+     * EVK_NO_PERVERTEX (MoltenVK: Metal has no per-vertex fragment inputs):
+     * the PS reads the three corners of its triangle from buffers.  vsout
+     * holds the GPU VS outputs of each corner, EVK_VSOUT_SLOTS per frame.
+     */
+    bool no_pervertex;
+    EvkBuf vsout;
+    uint32_t nvsout;
     uint32_t nidx;
     EvkBuf sysram;              /* imported guest RAM (GART targets), optional */
     /* device-local mirror of VRAM: shaders use it; uploads of CPU-dirty
@@ -161,6 +170,8 @@ struct EgVk {
     shaderc_compiler_t sc;
     shaderc_compile_options_t sco;
     char *frag_prefix;          /* #version + defines */
+    bool has_f64;               /* shaderFloat64 (Apple GPUs have none) */
+    bool portability;           /* VK_KHR_portability_subset (MoltenVK) */
     /* persistent SPIR-V cache (eg_vk_set_cache_dir): <dir>/<tpl>-<prog>.spv
      * plus the order in which the guest first used each program */
     char *cache_dir;
@@ -438,6 +449,30 @@ static const char *vert_src =
     "  v_z = v.pos.z;\n"
     "}\n";
 
+/*
+ * EVK_NO_PERVERTEX: the PS reads the corners from verts[] itself.  v_base is
+ * the triangle's first vertex (the draw's vertices are triangles from
+ * pc.first on).
+ */
+static const char *vert_src_nopv =
+    "#version 460\n"
+    "struct Vtx { vec4 pos; uvec4 misc; vec4 p[" EVK_MAX_PARAMS_STR "]; };\n"
+    "layout(std430, set = 0, binding = 2) readonly buffer VtxBuf { Vtx verts[]; };\n"
+    "layout(push_constant) uniform PC { uint draw; uint first; uint outbase; uint nidx; } pc;\n"
+    "layout(location = " EVK_MAX_PARAMS_STR ") flat out uint v_front;\n"
+    "layout(location = " EVK_MAX_PARAMS_STR " + 1) noperspective out float v_z;\n"
+    "layout(location = " EVK_MAX_PARAMS_STR " + 2) flat out uint v_base;\n"
+    "void main() {\n"
+    "  Vtx v = verts[gl_VertexIndex];\n"
+    "  float w = max(v.pos.w, 1e-20);\n"
+    "  gl_Position = vec4((v.pos.x * (2.0 / 8192.0) - 1.0) * w,\n"
+    "                     (v.pos.y * (2.0 / 8192.0) - 1.0) * w, 0.5 * w, w);\n"
+    "  uint c = uint(gl_VertexIndex) - pc.first;\n"
+    "  v_base = uint(gl_VertexIndex) - c % 3u;\n"
+    "  v_front = v.misc.x;\n"
+    "  v_z = v.pos.z;\n"
+    "}\n";
+
 /* "#version", the EVK_* defines, the template with the program spliced in */
 static char *frag_source(EgVk *vk, const char *ps, const char *defs)
 {
@@ -704,6 +739,25 @@ static VkPipeline make_pipeline(EgVk *vk, EvkPipe *p, char *err, size_t errlen)
         if (vkCreateGraphicsPipelines(vk->dev, vk->pcache, 1, &gi, NULL, &pipe) != VK_SUCCESS) {
             set_err(err, errlen, "vkCreateGraphicsPipelines failed");
             pipe = VK_NULL_HANDLE;
+            /* EG_VK_DUMP_FAILED=file: also the sources of a pipeline the driver
+             * rejects (file.frag, file.vert) */
+            if (getenv("EG_VK_DUMP_FAILED")) {
+                char fn[1024], vn[1024];
+                FILE *f;
+
+                snprintf(fn, sizeof(fn), "%s.frag", getenv("EG_VK_DUMP_FAILED"));
+                snprintf(vn, sizeof(vn), "%s.vert", getenv("EG_VK_DUMP_FAILED"));
+                f = fopen(fn, "w");
+                if (f) {
+                    fputs(p->src, f);
+                    fclose(f);
+                }
+                f = fopen(vn, "w");
+                if (f) {
+                    fputs(p->vsrc ? p->vsrc : (vk->no_pervertex ? vert_src_nopv : vert_src), f);
+                    fclose(f);
+                }
+            }
         }
     }
     vkDestroyShaderModule(vk->dev, frag, NULL);
@@ -971,28 +1025,36 @@ static bool pick_device(EgVk *vk, char *err, size_t errlen)
             !il.fragmentShaderPixelInterlock || !bary.fragmentShaderBarycentric ||
             !(sg.supportedStages & VK_SHADER_STAGE_FRAGMENT_BIT) ||
             !(sg.supportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT) ||
-            !f2.features.fragmentStoresAndAtomics || !f2.features.shaderFloat64) {
+            !f2.features.fragmentStoresAndAtomics) {
             continue;
         }
         score = pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 3 :
                 pr.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 2 : 1;
+        /* float64 is optional: without it the template uses exact 32-bit
+         * code (EVK_HAS_F64), so prefer a device that has it */
+        score = score * 2 + (f2.features.shaderFloat64 ? 1 : 0);
         if (want && (uint32_t)atoi(want) == i) {
             score = 100;
         }
         if (score > best_score) {
             best_score = score;
             best = i;
+            vk->has_f64 = f2.features.shaderFloat64;
         }
     }
     if (best == UINT32_MAX) {
         free(pd);
         set_err(err, errlen, "no Vulkan 1.3 device with external_memory_host, "
-                "pixel interlock, fragment barycentrics, quad subgroup operations, "
-                "fragment stores and float64");
+                "pixel interlock, fragment barycentrics, quad subgroup operations "
+                "and fragment stores");
         return false;
     }
     vk->phys = pd[best];
     free(pd);
+    vk->portability = has_ext(vk->phys, "VK_KHR_portability_subset");
+    /* EG_VK_PERVERTEX=0/1 overrides the choice (to compare the two paths) */
+    vk->no_pervertex = getenv("EG_VK_PERVERTEX") ? !atoi(getenv("EG_VK_PERVERTEX"))
+                                                 : vk->portability;
     return true;
 }
 
@@ -1004,6 +1066,9 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "qemu-evergreen", .apiVersion = VK_API_VERSION_1_3,
     };
+    /* MoltenVK (macOS) is a portability driver: the loader lists it only
+     * when the instance asks for portability enumeration */
+    static const char *iexts[] = { "VK_KHR_portability_enumeration" };
     VkInstanceCreateInfo ici = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app,
     };
@@ -1014,6 +1079,27 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
     vk->dirty_fn = dirty;
     vk->opaque = opaque;
     vk->vram_size = vram_size;
+#ifdef __APPLE__
+    /* Metal fast math may reassociate float arithmetic and drops the NaN
+     * and Inf semantics that the shader translation relies on */
+    setenv("MVK_CONFIG_FAST_MATH_ENABLED", "0", 0);
+#endif
+    {
+        uint32_t ne = 0, k;
+        VkExtensionProperties *ie;
+
+        vkEnumerateInstanceExtensionProperties(NULL, &ne, NULL);
+        ie = calloc(ne ? ne : 1, sizeof(*ie));
+        vkEnumerateInstanceExtensionProperties(NULL, &ne, ie);
+        for (k = 0; k < ne; k++) {
+            if (!strcmp(ie[k].extensionName, iexts[0])) {
+                ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+                ici.enabledExtensionCount = 1;
+                ici.ppEnabledExtensionNames = iexts;
+            }
+        }
+        free(ie);
+    }
     if (vkCreateInstance(&ici, NULL, &vk->inst) != VK_SUCCESS) {
         set_err(err, errlen, "vkCreateInstance failed");
         free(vk);
@@ -1042,6 +1128,7 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME,
             VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME,
             VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+            "VK_KHR_portability_subset",    /* must be enabled where offered */
         };
         VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR bary = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR,
@@ -1057,7 +1144,8 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
         };
         VkPhysicalDeviceFeatures2 f2 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f13,
-            .features = { .fragmentStoresAndAtomics = VK_TRUE, .shaderFloat64 = VK_TRUE },
+            .features = { .fragmentStoresAndAtomics = VK_TRUE, .shaderFloat64 = vk->has_f64,
+                          .vertexPipelineStoresAndAtomics = vk->no_pervertex },
         };
         VkDeviceQueueCreateInfo qi = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1066,7 +1154,7 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
         VkDeviceCreateInfo di = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &f2,
             .queueCreateInfoCount = 1, .pQueueCreateInfos = &qi,
-            .enabledExtensionCount = 3, .ppEnabledExtensionNames = exts,
+            .enabledExtensionCount = vk->portability ? 4 : 3, .ppEnabledExtensionNames = exts,
         };
         if (vkCreateDevice(vk->phys, &di, NULL, &vk->dev) != VK_SUCCESS) {
             set_err(err, errlen, "vkCreateDevice failed");
@@ -1082,7 +1170,11 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                   err, errlen) ||
         !host_buf(vk, &vk->idxbuf, (VkDeviceSize)EVK_FRAMES * EVK_IDX_SLOTS * 4,
-                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT, err, errlen) ||
+                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                  err, errlen) ||
+        !host_buf(vk, &vk->vsout, vk->no_pervertex ?
+                  (VkDeviceSize)EVK_FRAMES * EVK_VSOUT_SLOTS * 16 * EVK_MAX_PARAMS : 4096,
+                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, err, errlen) ||
         !host_buf(vk, &vk->verts,
                   (VkDeviceSize)EVK_FRAMES * EVK_VERT_SLOTS * sizeof(EvkVertex),
                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, err, errlen) ||
@@ -1162,12 +1254,12 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
     }
 
     {
-        VkDescriptorSetLayoutBinding b[9];
+        VkDescriptorSetLayoutBinding b[11];
         VkDescriptorSetLayoutCreateInfo li = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount = 9, .pBindings = b,
+            .bindingCount = 11, .pBindings = b,
         };
-        VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 9 };
+        VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 11 };
         VkDescriptorPoolCreateInfo pi = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &ps,
@@ -1185,7 +1277,7 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             .descriptorSetCount = 1, .pSetLayouts = &vk->dsl,
         };
         VkBuffer shader_vram = vk->mirror ? vk->vram_dev.buf : vk->vram.buf;
-        VkDescriptorBufferInfo bi[9] = {
+        VkDescriptorBufferInfo bi[11] = {
             { shader_vram, 0, VK_WHOLE_SIZE },
             { vk->draws_local ? vk->draws_dev.buf : vk->draws.buf, 0, VK_WHOLE_SIZE },
             { vk->verts.buf, 0, VK_WHOLE_SIZE }, { vk->counts.buf, 0, VK_WHOLE_SIZE },
@@ -1193,8 +1285,10 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             { shader_vram, 0, VK_WHOLE_SIZE }, { vk->counts.buf, 0, VK_WHOLE_SIZE },
             /* without the bitmap the shaders do not mark (no EVK_MARK_DIRTY) */
             { vk->dirty_bits.buf ? vk->dirty_bits.buf : vk->counts.buf, 0, VK_WHOLE_SIZE },
+            /* EVK_NO_PERVERTEX: the GPU VS outputs and indices of each corner */
+            { vk->vsout.buf, 0, VK_WHOLE_SIZE }, { vk->idxbuf.buf, 0, VK_WHOLE_SIZE },
         };
-        VkWriteDescriptorSet w[9];
+        VkWriteDescriptorSet w[11];
         VkCommandPoolCreateInfo cpi = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -1209,7 +1303,7 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
         };
 
-        for (i = 0; i < 9; i++) {
+        for (i = 0; i < 11; i++) {
             b[i] = (VkDescriptorSetLayoutBinding) {
                 .binding = i, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .descriptorCount = 1,
@@ -1242,10 +1336,10 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             set_err(err, errlen, "descriptor set allocation failed");
             goto fail;
         }
-        for (i = 0; i < 9; i++) {
+        for (i = 0; i < 11; i++) {
             w[i].dstSet = vk->dset;
         }
-        vkUpdateDescriptorSets(vk->dev, 9, w, 0, NULL);
+        vkUpdateDescriptorSets(vk->dev, 11, w, 0, NULL);
         if (vkCreateCommandPool(vk->dev, &cpi, NULL, &vk->pool) != VK_SUCCESS) {
             set_err(err, errlen, "command pool creation failed");
             goto fail;
@@ -1280,13 +1374,26 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
     shaderc_compile_options_set_optimization_level(vk->sco,
                                                    shaderc_optimization_level_zero);
     vk->frag_prefix = frag_prefix();
+    if (vk->no_pervertex) {
+        static const char def[] = "#define EVK_NO_PERVERTEX 1\n";
+        size_t n = strlen(vk->frag_prefix);
+        vk->frag_prefix = realloc(vk->frag_prefix, n + sizeof(def));
+        memcpy(vk->frag_prefix + n, def, sizeof(def));
+    }
+    if (vk->has_f64) {
+        static const char def[] = "#define EVK_HAS_F64 1\n";
+        size_t n = strlen(vk->frag_prefix);
+        vk->frag_prefix = realloc(vk->frag_prefix, n + sizeof(def));
+        memcpy(vk->frag_prefix + n, def, sizeof(def));
+    }
     if (vk->dirty_bits.buf) {
         static const char def[] = "#define EVK_MARK_DIRTY 1\n";
         size_t n = strlen(vk->frag_prefix);
         vk->frag_prefix = realloc(vk->frag_prefix, n + sizeof(def));
         memcpy(vk->frag_prefix + n, def, sizeof(def));
     }
-    vk->vert = compile(vk, vert_src, shaderc_vertex_shader, err, errlen);
+    vk->vert = compile(vk, vk->no_pervertex ? vert_src_nopv : vert_src, shaderc_vertex_shader,
+                       err, errlen);
     if (!vk->vert) {
         goto fail;
     }
@@ -1497,9 +1604,10 @@ void eg_vk_destroy(EgVk *vk)
         if (vk->cslayout) vkDestroyPipelineLayout(vk->dev, vk->cslayout, NULL);
         if (vk->dsl) vkDestroyDescriptorSetLayout(vk->dev, vk->dsl, NULL);
         {
-            EvkBuf *bufs[8] = { &vk->vram, &vk->draws, &vk->verts, &vk->counts,
-                                &vk->sysram, &vk->gart, &vk->vram_dev, &vk->idxbuf };
-            for (i = 0; i < 8; i++) {
+            EvkBuf *bufs[9] = { &vk->vram, &vk->draws, &vk->verts, &vk->counts,
+                                &vk->sysram, &vk->gart, &vk->vram_dev, &vk->idxbuf,
+                                &vk->vsout };
+            for (i = 0; i < 9; i++) {
                 if (bufs[i]->buf) vkDestroyBuffer(vk->dev, bufs[i]->buf, NULL);
                 if (bufs[i]->mem) vkFreeMemory(vk->dev, bufs[i]->mem, NULL);
             }
@@ -1996,6 +2104,7 @@ static void begin_batch(EgVk *vk)
     vk->recording = true;
     vk->ndraws = vk->nverts = 0;
     vk->nidx = 0;
+    vk->nvsout = 0;
     vkCmdBindIndexBuffer(vk->cmd, vk->idxbuf.buf, 0, VK_INDEX_TYPE_UINT32);
     vk->ndirty = 0;
     vk->nw = vk->nr = 0;
@@ -2285,6 +2394,11 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
         set_err(why, whylen, "too many vertices");
         return false;
     }
+    if (vk->no_pervertex && req->vs_glsl &&
+        (uint64_t)req->nidx * (req->ninst ? req->ninst : 1) > EVK_VSOUT_SLOTS) {
+        set_err(why, whylen, "too many corners");
+        return false;
+    }
     pipe = vk->specialize ? spec_pipeline(vk, req) : VK_NULL_HANDLE;
     if (!pipe && req->vs_glsl) {
         /* never wait for a GPU VS pipeline: the CPU VS path draws meanwhile */
@@ -2303,6 +2417,9 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
     if (vk->recording && (vk->ndraws >= EVK_DRAW_SLOTS ||
                           vk->nverts + req->nverts > EVK_VERT_SLOTS ||
                           vk->nidx + req->nidx > EVK_IDX_SLOTS ||
+                          (vk->no_pervertex && req->vs_glsl &&
+                           vk->nvsout + (uint64_t)req->nidx * (req->ninst ? req->ninst : 1) >
+                           EVK_VSOUT_SLOTS) ||
                           vk->ndirty + req->nwr > EVK_MAX_DIRTY)) {
         eg_vk_submit(vk);
     }
@@ -2353,6 +2470,15 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
     }
     {
         uint32_t pc[4] = { idx, 0, 0, 0 };
+        if (vk->no_pervertex) {
+            if (req->vs_glsl) {
+                pc[1] = vk->frame * EVK_IDX_SLOTS + vk->nidx;
+                pc[2] = vk->frame * EVK_VSOUT_SLOTS + vk->nvsout;
+                pc[3] = req->nidx;
+            } else {
+                pc[1] = vk->frame * EVK_VERT_SLOTS + vk->nverts;
+            }
+        }
         vkCmdPushConstants(vk->cmd, vk->layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, 16, pc);
@@ -2372,8 +2498,15 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
                                   (req->cull_back ? VK_CULL_MODE_BACK_BIT : 0));
         vkCmdSetFrontFace(vk->cmd, req->front_ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE
                                                   : VK_FRONT_FACE_CLOCKWISE);
-        vkCmdDrawIndexed(vk->cmd, req->nidx, req->ninst ? req->ninst : 1,
-                         vk->frame * EVK_IDX_SLOTS + vk->nidx, 0, 0);
+        if (vk->no_pervertex) {
+            /* one invocation per corner: the VS fetches its index (EVK_VID) */
+            vkCmdDraw(vk->cmd, req->nidx, req->ninst ? req->ninst : 1,
+                      vk->frame * EVK_IDX_SLOTS + vk->nidx, 0);
+            vk->nvsout += req->nidx * (req->ninst ? req->ninst : 1);
+        } else {
+            vkCmdDrawIndexed(vk->cmd, req->nidx, req->ninst ? req->ninst : 1,
+                             vk->frame * EVK_IDX_SLOTS + vk->nidx, 0, 0);
+        }
         vk->nidx += req->nidx;
     } else {
         vkCmdSetCullMode(vk->cmd, VK_CULL_MODE_NONE);
