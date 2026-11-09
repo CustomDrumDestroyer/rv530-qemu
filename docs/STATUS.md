@@ -62,6 +62,7 @@ the debugging tools, and the known gaps.
 | `make-opencore.sh` | `ATY,Wormy` framebuffer properties, iMac8,1 SMBIOS (placeholder serials), RTC ACPI patch, and tablet kext. It boots directly to the Apple logo |
 | `sl-vm.sh` | q35 launcher: the card behind a `pci-bridge`, USB input and audio, ssh forward, drag and drop, and clipboard |
 | `agent/` | Drag and drop in the two directions, text clipboard, and resolution changes when you resize the window |
+| `gui/` | Experimental VM manager (Python and Tk): VM list and state, checks before a start, start, shutdown, pause, reset, screen preview, settings, logs, and the boot-volume and installer tools. Tested on Linux with a stand-in for QEMU. Not tested on macOS or Windows hosts yet |
 | `tests/` | OpenGL and Core Image checks in the guest (formats, VBOs, MSAA, depth, Y'CbCr video textures, and Core Image blur compared with software) |
 
 ## Known gaps

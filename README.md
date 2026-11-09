@@ -118,6 +118,7 @@ You do not need them from this repository.
 | `qemu/patches/0009-tcg-notdirty-race.patch` | TCG: reads the dirty bits while it holds the TLB lock. It does this when it installs a TLB entry and when it removes `TLB_NOTDIRTY` from an entry. Thus a dirty-log reset at the same time cannot let a vCPU write a page without a log entry |
 | `qemu/patches/0011-tcg-after-sync-from-vcpu.patch` | TCG: a device that reads the dirty log from a vCPU thread (in an MMIO access) leaves the exec section of that vCPU while it waits for the other vCPUs. Otherwise a vCPU that starts an exclusive section (an atomic instruction) can deadlock the VM |
 | `qemu/hw/display/evergreen/`, `qemu/patches/0010-build-glue-evergreen.patch` | The experimental Radeon HD 5770 device and its build glue ([docs/EVERGREEN.md](docs/EVERGREEN.md)) |
+| `snowleopard/gui/` | An experimental VM manager window for Linux, macOS, and Windows hosts (Python and Tk). It starts `sl-vm.sh` with the settings of each VM and controls the VMs through QMP ([snowleopard/gui/README.md](snowleopard/gui/README.md)) |
 | `snowleopard/` | All the parts for the Snow Leopard guest: launcher (with `host.sh`, which selects KVM, Hypervisor.framework, or TCG), install-image tool, OVMF build with the GOP driver of the card, OpenCore boot-volume builder, tablet kext, guest agent, QMP control tool, and in-guest tests ([snowleopard/README.md](snowleopard/README.md)) |
 | `scripts/package/`, `.github/workflows/release.yml` | Build the pre-built packages on GitHub Actions |
 | `scripts/setup-qemu.sh` | Gets QEMU 11.1.3, adds the device, applies the patches, and builds QEMU and the option ROM |
@@ -345,6 +346,10 @@ qemu-system-x86_64 -M q35 -accel kvm -m 4G -vga none \
   that the guest needs (see [snowleopard/README.md](snowleopard/README.md)).
   It puts the card behind a conventional `pci-bridge`. The guest does not
   service the interrupt of a PCIe root port that shares the line of the card.
+- **A window to manage VMs (experimental):** `python3 snowleopard/gui/slgui.py`
+  starts, stops, and configures the VMs of `sl-vm.sh`. It also builds their
+  boot volumes and installer disks. See
+  [snowleopard/gui/README.md](snowleopard/gui/README.md).
 - **Linux guests:** put the card behind a `pcie-root-port`, as the example
   shows. The `radeon` driver uses the PCIe GART only when the card is a PCIe
   endpoint. The card must be the only VGA device. The guest needs the R520 CP
@@ -404,6 +409,7 @@ make -C qemu/hw/display/rv530/tests/us check
 make -C qemu/hw/display/rv530/tests/raster check
 make -C qemu/hw/display/rv530/tests/tex check
 make -C qemu/hw/display/rv530/tests/vk && RV530_VK_SYNC_COMPILE=1 qemu/hw/display/rv530/tests/vk/test_vk
+python3 snowleopard/gui/test_vmcore.py
 ```
 
 Some test steps use the reference sources from `scripts/fetch-references.sh`.

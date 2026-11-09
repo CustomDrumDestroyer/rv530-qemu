@@ -37,6 +37,7 @@ items:
 | `kexts/QemuTabletFix.kext` | A kext without code. It makes the HID driver of 10.6 use the full range of the usb-tablet. Thus the guest pointer follows the host pointer |
 | `agent/` | `RV530Agent`, an optional helper in the guest. It does drag and drop between host and guest, text clipboard sync, and a change to the new resolution when you resize the window. `agent/install.sh` builds it with the gcc of Xcode 3.2 and installs it as a LaunchAgent. If the guest does not have Xcode, `agent/build-host.sh` builds it on a macOS host. It uses clang for 10.6, and `unixthread.py` replaces the `LC_MAIN` that the current ld writes with the `LC_UNIXTHREAD` that the dyld of 10.6 needs. Then `install.sh` installs that binary |
 | `slctl.py` | Controls a running VM through QMP: screenshots, keys, typing, clicks, HMP commands, and quit. `QMP` is a socket path or, on Windows, `HOST:PORT` |
+| `gui/` | `slgui.py`, an experimental window to manage the VMs (Linux, macOS, and Windows hosts). It starts `sl-vm.sh` with the settings of each VM, controls the VMs through QMP, and runs `make-opencore.sh` and `make-installer.py` ([gui/README.md](gui/README.md)) |
 | `sl-ssh.sh` | Opens ssh to the guest with the old algorithms that its OpenSSH 5.2 needs (`SSHPORT`, `SL_USER`, `SL_KEY`) |
 | `tests/` | OpenGL and Core Image checks in the guest (`tests/README.md`) |
 | `work/` | Git ignores this directory. It contains the system disk, the boot volume, the OVMF builds, and logs (`serial.log`, `qemu.log`, `vm.out`). Keep your SMC key here too, for example in `work/osk.env`. Never put it in a tracked file |
@@ -45,6 +46,11 @@ The host side of drag and drop and clipboard sync is in `../scripts/dnd/`.
 `../scripts/agent-update.sh` installs the agent through ssh.
 
 ## Setup
+
+The steps below use the scripts in a terminal. The experimental VM manager,
+`python3 gui/slgui.py`, does most of them from a window: it builds OVMF and
+the boot volume, makes the installer disk, and starts the VM. It does not
+build QEMU ([gui/README.md](gui/README.md)).
 
 ### 1. Build QEMU, OVMF, and the boot volume
 
