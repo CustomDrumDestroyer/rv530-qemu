@@ -1,0 +1,39 @@
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -3060,8 +3060,36 @@
+          * in this case and no need for making run_on_cpu when
+          * record/replay is enabled.
+          */
++        CPUState *self = current_cpu;
++        bool leave;
++
+         cpuas = container_of(listener, CPUAddressSpace, tcg_as_listener);
++        /*
++         * A device can get here from a vCPU thread, in the middle of an
++         * MMIO access (a ring or flush register that reads the dirty log).
++         * That vCPU is still inside its exec section.  If another vCPU now
++         * starts an exclusive section (cpu_exec_step_atomic), it waits for
++         * this one to leave the section, the remaining vCPUs wait for the
++         * exclusive section, and none of them runs do_nothing: a deadlock.
++         * Leave the exec section while waiting.  Enter it again without the
++         * BQL, because the exclusive section can need the BQL.
++         */
++        leave = self && self != cpuas->cpu && qatomic_read(&self->running);
++        if (leave) {
++            cpu_exec_end(self);
++        }
+         run_on_cpu(cpuas->cpu, do_nothing, RUN_ON_CPU_NULL);
++        if (leave) {
++            bool locked = bql_locked();
++
++            if (locked) {
++                bql_unlock();
++            }
++            cpu_exec_start(self);
++            if (locked) {
++                bql_lock();
++            }
++        }
+     }
+ }
+ 

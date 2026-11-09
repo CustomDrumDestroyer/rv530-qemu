@@ -75,6 +75,9 @@ fi
 if ! grep -q "hw/display/evergreen" meson.build; then
     patch -p1 < "$HERE/qemu/patches/0010-build-glue-evergreen.patch"
 fi
+if ! grep -q "Leave the exec section while waiting" system/physmem.c; then
+    patch -p1 < "$HERE/qemu/patches/0011-tcg-after-sync-from-vcpu.patch"
+fi
 # trees patched before eg_atom.c (the synthetic AtomBIOS mailbox) existed
 if ! grep -q "evergreen/eg_atom.c" hw/display/meson.build; then
     sed -i.bak "s|'evergreen/eg_vk_ps.c'))|'evergreen/eg_vk_ps.c', 'evergreen/eg_atom.c'))|" \
