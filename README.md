@@ -303,8 +303,9 @@ Tests:
   `gltest` and `gltex` give the correct results.
 - That virtual machine has no GPU. With the Mesa software Vulkan driver
   (lavapipe), the Vulkan tests (`tests/vk`) pass, and the desktop draws
-  correctly. But GL programs in the guest read back only black. We did not
-  test the Vulkan backend on a real GPU under Windows.
+  correctly. But GL programs in the guest read back only black
+  ([#17](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/17)). We
+  did not test the Vulkan backend on a real GPU under Windows.
 - Windows Hypervisor Platform (`ACCEL=whpx`) did not start in that virtual
   machine (nested Hyper-V under KVM). We did not test it on a real computer.
 
