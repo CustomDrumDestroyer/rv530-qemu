@@ -270,6 +270,7 @@ static void cs_pool_init(void)
 void eg_compute_dispatch(EvergreenState *s, const uint32_t *d, uint32_t n)
 {
     static int prof = -1;
+    static bool cpu_only;
     Dispatch dp = { .s = s };
     EgShader *sh;
     EgProgram prog;
@@ -293,6 +294,14 @@ void eg_compute_dispatch(EvergreenState *s, const uint32_t *d, uint32_t n)
     dp.pgm = (uint64_t)CTX(s, 0x288d0) << 8;
     if (prof < 0) {
         prof = getenv("EG_CS_PROFILE") != NULL;
+        cpu_only = getenv("EG_CS_CPU") != NULL;
+    }
+    if (!cpu_only && eg_gfx_vk_dispatch(s, dp.gn, dp.gs, dp.g0, dp.pgm)) {
+        if (prof) {
+            qemu_log("evergreen: compute %ux%ux%u groups of %" PRIu64 " threads at %" PRIx64
+                     ": on the GPU\n", dp.gn[0], dp.gn[1], dp.gn[2], dp.tpg, dp.pgm);
+        }
+        return;
     }
     if (prof) {
         t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);

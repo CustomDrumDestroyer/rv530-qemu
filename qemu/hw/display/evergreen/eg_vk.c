@@ -52,6 +52,7 @@ typedef struct EvkPipe {
     int state;                  /* EVK_PIPE_*, written by the compiler thread */
     char *src;                  /* GLSL waiting for compilation */
     char *vsrc;                 /* its vertex shader (GPU VS), or NULL: vk->vert */
+    bool compute;               /* src is a compute shader (eg_vk_dispatch) */
     uint32_t *spv;              /* or SPIR-V from the disk cache */
     size_t spv_bytes;
     struct EvkPipe *next;       /* hash chain */
@@ -117,6 +118,7 @@ struct EgVk {
     VkDescriptorPool dpool;
     VkDescriptorSet dset;
     VkPipelineLayout layout;
+    VkPipelineLayout cslayout;  /* compute dispatches: the same set, push constants */
     VkShaderModule vert;
     VkPipelineCache pcache;
 
@@ -197,6 +199,7 @@ struct EgVk {
     void *opaque;
 
     uint64_t stat_draws, stat_batches, stat_pipes, stat_barriers, stat_upload_bytes;
+    uint64_t stat_dispatches;
     uint64_t stat_binds;        /* pipeline changes between draws */
     uint32_t zslot;             /* counts[] slot of the passing pixels of new draws */
     /* EG_VK_DRAWSTAMPS: a timestamp after each draw, GPU time by program */
@@ -485,7 +488,7 @@ static char *frag_prefix(void)
         D(EVK_M_ZPASS_SLOT), D(EVK_M_BOOLC),
         D(EVK_MAX_VS_VBUF), D(EVK_VP), D(EVK_M_FLATMASK), D(EVK_M_GPU_VS), D(EVK_M_VS_BOOLC),
         D(EVK_M_VTE), D(EVK_M_CLIP), D(EVK_M_VPORT), D(EVK_M_WIN_OFS), D(EVK_M_NINTERP),
-        D(EVK_M_ISRC), D(EVK_M_EARLY_Z),
+        D(EVK_M_ISRC), D(EVK_M_EARLY_Z), D(EVK_M_CS),
 #undef D
     };
     char buf[4096];
@@ -572,6 +575,37 @@ static VkPipeline make_pipeline(EgVk *vk, EvkPipe *p, char *err, size_t errlen)
     size_t bytes = p->spv_bytes;
 
     p->spv = NULL;
+    if (p->compute) {
+        /* SPIR-V from the disk cache, else compiled (and stored) */
+        if (!words && vk->cache_dir) {
+            words = cache_load(vk, p->hash, &bytes);
+        }
+        if (!words && p->src) {
+            words = glsl_to_spv(vk, p->src, shaderc_compute_shader, &bytes, err, errlen);
+            if (words && vk->cache_dir) {
+                cache_store(vk, p->hash, words, bytes);
+            }
+        }
+        free(p->src);
+        p->src = NULL;
+        frag = words ? spv_module(vk, words, bytes, err, errlen) : VK_NULL_HANDLE;
+        free(words);
+        if (!frag) {
+            return VK_NULL_HANDLE;
+        }
+        if (vkCreateComputePipelines(vk->dev, vk->pcache, 1, &(VkComputePipelineCreateInfo) {
+                .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                           .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = frag,
+                           .pName = "main" },
+                .layout = vk->cslayout }, NULL, &pipe) != VK_SUCCESS) {
+            set_err(err, errlen, "vkCreateComputePipelines failed");
+            pipe = VK_NULL_HANDLE;
+        }
+        vkDestroyShaderModule(vk->dev, frag, NULL);
+        __atomic_add_fetch(&vk->stat_pipes, 1, __ATOMIC_RELAXED);
+        return pipe;
+    }
     if (!words && p->src) {
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -1179,7 +1213,8 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             b[i] = (VkDescriptorSetLayoutBinding) {
                 .binding = i, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
+                              VK_SHADER_STAGE_COMPUTE_BIT,
             };
             w[i] = (VkWriteDescriptorSet) {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1193,6 +1228,14 @@ EgVk *eg_vk_create(void *vram, uint64_t vram_size, EgVkDirtyFn dirty,
             vkCreatePipelineLayout(vk->dev, &pli, NULL, &vk->layout) != VK_SUCCESS) {
             set_err(err, errlen, "descriptor/pipeline layout creation failed");
             goto fail;
+        }
+        {
+            VkPushConstantRange cpcr = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 16 };
+            pli.pPushConstantRanges = &cpcr;
+            if (vkCreatePipelineLayout(vk->dev, &pli, NULL, &vk->cslayout) != VK_SUCCESS) {
+                set_err(err, errlen, "compute pipeline layout creation failed");
+                goto fail;
+            }
         }
         ai.descriptorPool = vk->dpool;
         if (vkAllocateDescriptorSets(vk->dev, &ai, &vk->dset) != VK_SUCCESS) {
@@ -1451,6 +1494,7 @@ void eg_vk_destroy(EgVk *vk)
         if (vk->draws_dev.mem) vkFreeMemory(vk->dev, vk->draws_dev.mem, NULL);
         if (vk->dirty_bits.mem) vkFreeMemory(vk->dev, vk->dirty_bits.mem, NULL);
         if (vk->layout) vkDestroyPipelineLayout(vk->dev, vk->layout, NULL);
+        if (vk->cslayout) vkDestroyPipelineLayout(vk->dev, vk->cslayout, NULL);
         if (vk->dsl) vkDestroyDescriptorSetLayout(vk->dev, vk->dsl, NULL);
         {
             EvkBuf *bufs[8] = { &vk->vram, &vk->draws, &vk->verts, &vk->counts,
@@ -2406,6 +2450,182 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
     return true;
 }
 
+/*
+ * The pipeline of a compute program: the specialized one when it is ready,
+ * else the generic one.  The generic one gets a bounded wait while it
+ * compiles, as for draws.
+ */
+static VkPipeline cs_pipeline(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
+{
+    static const char cs_def[] = "#define EVK_CS 1\n";
+    uint64_t key = req->prog_hash ^ 0x63730000c5c5c5c5ull, skey;
+    EvkPipe **head, *p;
+    VkPipeline pipe = VK_NULL_HANDLE;
+
+    if (vk->specialize) {
+        uint32_t w[SPEC_WORDS];
+        int n = spec_words(req->draw, w), i;
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (i = 0; i < n; i++) {
+            h = (h ^ w[i]) * 0x100000001b3ull;
+        }
+        skey = key ^ (h * 0x9e3779b97f4a7c15ull) ^ 0x5bd1e995u;
+        for (p = vk->pipes[skey % EVK_PIPE_BUCKETS]; p; p = p->next) {
+            if (p->hash == skey) {
+                break;
+            }
+        }
+        if (p) {
+            if (__atomic_load_n(&p->state, __ATOMIC_ACQUIRE) == EVK_PIPE_READY) {
+                return p->pipe;
+            }
+        } else {
+            char *defs = spec_defs(w, n);
+            size_t nd = strlen(defs);
+            char *all = malloc(sizeof(cs_def) + nd);
+            memcpy(all, cs_def, sizeof(cs_def) - 1);
+            memcpy(all + sizeof(cs_def) - 1, defs, nd + 1);
+            free(defs);
+            p = calloc(1, sizeof(*p));
+            p->hash = skey;
+            p->compute = true;
+            p->state = EVK_PIPE_PENDING;
+            p->src = frag_source(vk, req->cs_glsl, all);
+            free(all);
+            head = &vk->pipes[skey % EVK_PIPE_BUCKETS];
+            p->next = *head;
+            *head = p;
+            if (!p->src) {
+                p->state = EVK_PIPE_FAILED;
+            } else if (vk->sync_compile || !vk->ncompilers) {
+                compile_entry(vk, p);
+                if (p->state == EVK_PIPE_READY) {
+                    return p->pipe;
+                }
+            } else {
+                pthread_mutex_lock(&vk->qlock);
+                if (vk->qtail) {
+                    vk->qtail->qnext = p;
+                } else {
+                    vk->qhead = p;
+                }
+                vk->qtail = p;
+                pthread_cond_signal(&vk->qcond);
+                pthread_mutex_unlock(&vk->qlock);
+            }
+        }
+    }
+    head = &vk->pipes[key % EVK_PIPE_BUCKETS];
+    for (p = *head; p; p = p->next) {
+        if (p->hash == key) {
+            switch (__atomic_load_n(&p->state, __ATOMIC_ACQUIRE)) {
+            case EVK_PIPE_READY:
+                return p->pipe;
+            case EVK_PIPE_PENDING:
+                return wait_pipeline(vk, p, why, whylen);
+            default:
+                set_err(why, whylen, "compute program failed to compile");
+                return VK_NULL_HANDLE;
+            }
+        }
+    }
+    p = calloc(1, sizeof(*p));
+    p->hash = key;
+    p->compute = true;
+    p->state = EVK_PIPE_PENDING;
+    p->src = frag_source(vk, req->cs_glsl, cs_def);
+    p->next = *head;
+    *head = p;
+    if (!p->src) {
+        p->state = EVK_PIPE_FAILED;
+        set_err(why, whylen, "compute program not translatable");
+        return VK_NULL_HANDLE;
+    }
+    if (vk->sync_compile || !vk->ncompilers) {
+        compile_entry(vk, p);
+        pipe = p->state == EVK_PIPE_READY ? p->pipe : VK_NULL_HANDLE;
+        if (!pipe) {
+            set_err(why, whylen, "compute program failed to compile");
+        }
+        return pipe;
+    }
+    pthread_mutex_lock(&vk->qlock);
+    if (vk->qtail) {
+        vk->qtail->qnext = p;
+    } else {
+        vk->qhead = p;
+    }
+    vk->qtail = p;
+    pthread_cond_signal(&vk->qcond);
+    pthread_mutex_unlock(&vk->qlock);
+    return wait_pipeline(vk, p, why, whylen);
+}
+
+bool eg_vk_dispatch(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
+{
+    VkPipeline pipe;
+    uint32_t idx;
+    int i;
+    VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+
+    if (!req->cs_groups[0] || !req->cs_groups[1]) {
+        return true;
+    }
+    pipe = cs_pipeline(vk, req, why, whylen);
+    if (!pipe) {
+        return false;
+    }
+    if (vk->recording && (vk->ndraws >= EVK_DRAW_SLOTS ||
+                          vk->ndirty + req->nwr > EVK_MAX_DIRTY)) {
+        eg_vk_submit(vk);
+    }
+    if (!vk->recording) {
+        begin_batch(vk);
+    }
+    upload_for_draw(vk, req);
+    if (vk->rendering) {
+        vkCmdEndRendering(vk->cmd);
+        vk->rendering = false;
+    }
+    /* after every earlier draw, upload and dispatch of the batch */
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(vk->cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+
+    idx = vk->frame * EVK_DRAW_SLOTS + vk->ndraws++;
+    memcpy((EvkDraw *)vk->draws.map + idx, req->draw, sizeof(EvkDraw));
+    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vkCmdBindDescriptorSets(vk->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, vk->cslayout, 0, 1,
+                            &vk->dset, 0, NULL);
+    {
+        uint32_t pc[4] = { idx, 0, 0, 0 };
+        vkCmdPushConstants(vk->cmd, vk->cslayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pc);
+    }
+    vkCmdDispatch(vk->cmd, req->cs_groups[0], req->cs_groups[1], 1);
+
+    /* before every later draw, dispatch, copy and the copy-back */
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                       VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(vk->cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 1, &mb, 0, NULL, 0, NULL);
+    begin_rendering(vk);
+    vk->nw = vk->nr = 0;
+    vk->nzgrow = 0;
+    for (i = 0; i < req->nwr && vk->ndirty < EVK_MAX_DIRTY; i++) {
+        vk->dirty_off[vk->ndirty] = req->wr_off[i];
+        vk->dirty_len[vk->ndirty] = req->wr_len[i];
+        vk->ndirty++;
+    }
+    vk->stat_dispatches++;
+    return true;
+}
+
 /* whether the pipeline of a program exists (ready or compiling) */
 bool eg_vk_has_pipeline(EgVk *vk, uint64_t hash)
 {
@@ -2900,7 +3120,8 @@ void eg_vk_submit(EgVk *vk)
         vkCmdCopyBuffer(pre, vk->draws.buf, vk->draws_dev.buf, 1, &rg);
         vkCmdPipelineBarrier(pre, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
                              &(VkMemoryBarrier){ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                                  .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
                                                  .dstAccessMask = VK_ACCESS_SHADER_READ_BIT },

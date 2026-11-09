@@ -113,7 +113,7 @@ We tested these items in Lion:
 | Chess | Correct |
 | `gltest`, `glms`, `gltex`, `gltexfmt`, `glstrip`, `gltexyuv` | The same results as in 10.6 |
 | Core Image | `ci_blur_check.py`: max diff 0. `ci_blur_bench.py`: approximately 16 ms per frame |
-| Nexuiz `bench1` demo | 26.8 frames per second at 1280 x 720, 4 vCPUs |
+| Nexuiz `bench1` demo | 28.1 frames per second at 1280 x 720, 4 vCPUs |
 
 The first start of a program in Lion compiles its pipelines. During that
 time, the frame rate is lower.
@@ -141,7 +141,7 @@ We tested these items in Mavericks:
 | Mission Control | Correct |
 | Chess | Correct |
 | `gltest`, `glms`, `gltex`, `gltexfmt`, `glstrip`, `gltexyuv` | The same results as in 10.6 |
-| Core Image | `ci_blur_check.py`: max diff 0. `ci_blur_bench.py`: approximately 1.3 s per frame (compute on the CPU) |
+| Core Image | `ci_blur_check.py`: max diff 0. `ci_blur_bench.py`: 10-13 ms per frame, 4 vCPUs |
 
 ## The option ROM
 
@@ -216,6 +216,11 @@ The CP runs the ring in a bottom half of the main loop:
   interrupt) wait in a queue. The device writes each fence when the GPU has
   completed the batch before it, so the guest sees it only after the
   rendering.
+- The interrupt of an `EVENT_WRITE_EOP` fence goes out if `CP_INT_CNTL`
+  enables timestamp interrupts when the fence completes, as on the hardware.
+  Apple's drivers enable them when they start to wait for a timestamp, which
+  can be after the CP read the packet. When the device checked the bit at
+  the packet, the wait of 10.9 ended only at its 1 s timeout.
 - `GRBM_STATUS` shows `GUI_ACTIVE` while batches run. Apple's driver polls it
   to wait for the GPU.
 - Each batch marks the VRAM that it drew as dirty when it completes. The
@@ -281,9 +286,8 @@ constant file of the stage.
 
 ### Compute
 
-`DISPATCH_DIRECT` runs a compute shader (`eg_compute.c`). The shader
-interpreter runs it on the CPU. The device uses the registers and slots that
-Apple's OpenCL driver uses:
+`DISPATCH_DIRECT` runs a compute shader (`eg_compute.c`). The device uses the
+registers and slots that Apple's OpenCL driver uses:
 
 - The program is at `SQ_PGM_START_LS`. The thread groups have
   `SPI_COMPUTE_NUM_THREAD_X/Y/Z` threads.
@@ -295,9 +299,23 @@ Apple's OpenCL driver uses:
   `STORE_TYPED` pixels with the format and tiling of the color buffer, and
   `STORE_RAW` dwords to a linear buffer.
 
-Before a dispatch, the device waits for the GPU. After the dispatch, it marks
-the color buffers as dirty, so the GPU uses the new data. The caller and up to
-15 worker threads run batches of 16 threads. The CP releases the BQL during
+The Vulkan backend runs the dispatch on the host GPU:
+
+- `eg_vk_ps.c` translates the program to the GLSL function `cs_run()`.
+  `eg_vk_frag.glsl` with `EVK_CS` makes it a compute shader. Each invocation
+  is one guest thread, and `rat_store()` writes the RATs with the same
+  tiling and format code as the pixel back end.
+- The dispatch goes into the current batch, in order with the draws, with a
+  barrier before it and after it. Its RATs go back to the guest VRAM at the
+  end of the batch, as render targets do.
+- Each program has a generic and a specialized pipeline, as pixel shaders
+  have.
+
+The CPU runs the dispatch when the translation or the pipeline is not
+available, for example while the pipeline compiles. Before a dispatch on the
+CPU, the device waits for the GPU. After it, the device marks the color
+buffers as dirty, so the GPU uses the new data. The caller and up to 15
+worker threads run batches of 16 threads. The CP releases the BQL during
 the dispatch, as it does while it waits for the GPU.
 
 Apple's Core Image kernels in 10.9 use ALU, `SAMPLE`, and `MEM_RAT`
@@ -331,7 +349,8 @@ barriers, or atomic RAT operations.
 | `EG_MMIO_BQL=1` | All register accesses take the BQL, also the ring pointer |
 | `EG_VK_DRAWSTAMPS=1` | Writes a GPU timestamp after each draw, and logs the GPU time of each program |
 | `EG_CS_THREADS=n` | Compute dispatches use n worker threads and the caller (default: half the host CPUs, at most 16 threads in all) |
-| `EG_CS_PROFILE=1` | Logs the size and the time of each compute dispatch |
+| `EG_CS_CPU=1` | Runs all compute dispatches on the CPU |
+| `EG_CS_PROFILE=1` | Logs the size of each compute dispatch, and where it runs (and why on the CPU), or its time on the CPU |
 | `EG_CS_DUMP=dir` | Writes the state and the program of the first 64 compute dispatches to `dir` |
 | `EG_VK_DEFS=...` | Adds lines to the start of each shader (`;` starts a new line). For experiments. A change compiles all pipelines again |
 
@@ -406,8 +425,10 @@ These measurements show where the time goes in Nexuiz now:
   show a surface while the GPU draws into it (tearing,
   [#16](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/16)).
 - With `EG_VK_VERIFY` and more than one vCPU, Mac OS X can panic.
-- Compute dispatches run on the CPU. In 10.9, a Core Image blur of
-  1024 x 1024 takes approximately 1.3 s per frame. In 10.7, the same blur
-  uses GL and takes approximately 16 ms.
-- Compute shaders cannot use LDS, barriers, or atomic RAT operations.
+- Compute shaders cannot use LDS, barriers, atomic RAT operations, vertex
+  fetches, or the constant file. Programs with these run on the CPU, and
+  their RATs must be CB_COLOR0-7 on the GPU.
+- In a test after a change of the template, a Lion guest with one vCPU
+  restarted one time while it compiled its pipelines again. We could not
+  make it occur again.
 - We did not test macOS hosts with this device.

@@ -29,7 +29,7 @@
 #include <ctype.h>
 #include "eg_vk.h"
 
-#define EVK_PS_BUILD_ID     4       /* bump when the generated code changes */
+#define EVK_PS_BUILD_ID     5       /* bump when the generated code changes */
 #define MAX_CF              4096
 #define MAX_STACK           32
 #define MAX_LOOPS           8
@@ -84,6 +84,7 @@ typedef struct Tr {
     int kc[4];                  /* the kcache window slot of KC0-KC3, -1: none */
     int tmp;                    /* unique names */
     bool vs;                    /* translating a vertex shader */
+    bool cs;                    /* ... a compute shader */
     bool in_fs;                 /* ... in its fetch shader (CALL_FS) */
     EvkFetchFn fetch_fs;
     void *fs_opaque;
@@ -885,6 +886,10 @@ static void emit_vtx(Tr *t, const uint32_t *f, const char *cond)
     uint32_t w0 = f[0], w1 = f[1], w2 = f[2];
     uint32_t buf = (w0 >> 8) & 0xff, src = (w0 >> 16) & 0x7f, ssel = (w0 >> 24) & 3;
     uint32_t dst = w1 & 0x7f;
+    if (t->cs) {
+        fail(t, "vertex fetch in a compute shader");
+        return;
+    }
     /* resource ids: PS relative; VS absolute (VS 176+, fetch shader 992+) */
     int slot = vbuf_slot(t, t->vs ? (t->in_fs ? 992u : 176u) + buf : buf);
 
@@ -994,6 +999,28 @@ static void emit_export(Tr *t, uint32_t w0, uint32_t w1)
         }
         EMIT("    }\n");
     }
+}
+
+/* MEM_RAT, MEM_RAT_CACHELESS, MEM_RAT_COMBINED_CACHELESS of a compute shader */
+static void emit_rat(Tr *t, uint32_t w0, uint32_t w1)
+{
+    uint32_t id = w0 & 15, inst = (w0 >> 4) & 0x3f, im = (w0 >> 11) & 3;
+    uint32_t type = (w0 >> 13) & 3, rw = (w0 >> 15) & 0x7f, idx = (w0 >> 23) & 0x7f;
+    uint32_t es = w0 >> 30, mask = (w1 >> 12) & 0xf, burst = (w1 >> 16) & 0xf;
+
+    if (!t->cs) {
+        return;                         /* not in a pixel or vertex shader */
+    }
+    if (id >= 8 || im || !(type & 1) || burst || (inst != 1 && inst != 2) || ((w0 >> 22) & 1)) {
+        fail(t, "MEM_RAT id %u instruction %u type %u index mode %u burst %u",
+             id, inst, type, im, burst);
+        return;
+    }
+    t->info->rat_mask |= 1u << id;
+    use_reg(t, (int)rw);
+    use_reg(t, (int)idx);
+    EMIT("    if (act && alive) rat_store(%uu, %uu, R[%u], R[%u], %uu, %uu);\n",
+         id, inst, idx, rw, mask, es);
 }
 
 static void emit_setup(Str *s, uint32_t baryc, uint32_t in0, uint32_t in1, Tr *t)
@@ -1182,10 +1209,13 @@ static void tr_program(Tr *t)
                 t->opaque = o;
             }
             break;
+        case 0x56: case 0x57: case 0x5c:                /* MEM_RAT* */
+            emit_rat(t, w0, w1);
+            break;
         case 0x00:                                      /* NOP */
         case 0x1a: case 0x1e:                           /* WAIT_ACK, WAVE_SYNC */
-        case 0x50: case 0x52: case 0x55: case 0x56: case 0x57:
-        case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c:
+        case 0x50: case 0x52: case 0x55:
+        case 0x58: case 0x59: case 0x5a: case 0x5b:
             break;
         case 0x01: case 0x02: case 0x1b: case 0x1c: {   /* TC, VC, TEX_ACK, VTX_ACK */
             uint32_t addr = w0 & 0xffffff, cnt = ((w1 >> 10) & 0x3f) + 1, k;
@@ -1377,6 +1407,39 @@ char *evk_vs_to_glsl(EvkFetchFn fetch, void *opaque, EvkFetchFn fetch_fs, void *
         out = replace_all(out, "D.loopc[", "D.vs_loopc[");
         out = replace_all(out, "EVK_M_BOOLC", "EVK_M_VS_BOOLC");
     }
+    return out;
+}
+
+char *evk_cs_to_glsl(EvkFetchFn fetch, void *opaque, EvkProgInfo *info, char *why,
+                     size_t whylen)
+{
+    Tr tr, *t = &tr;
+    Str setup = { 0 };
+    char *out;
+    int i;
+
+    memset(t, 0, sizeof(*t));
+    memset(info, 0, sizeof(*info));
+    t->fetch = fetch;
+    t->opaque = opaque;
+    t->cs = true;
+    t->info = info;
+    t->why = why;
+    t->whylen = whylen;
+    for (i = 0; i < 4; i++) {
+        t->kc[i] = -1;
+    }
+    use_reg(t, 0);
+    use_reg(t, 1);
+    str_add(&setup, "    R[0] = uvec4(cs_l, 0u);\n    R[1] = uvec4(cs_g, 0u);\n");
+    tr_program(t);
+    if (!t->fail && info->uses_cfile) {
+        fail(t, "compute shader reads the constant file");
+    }
+    if (!t->fail && !info->rat_mask) {
+        fail(t, "compute shader without MEM_RAT");
+    }
+    out = tr_finish(t, &setup, "cs_run");
     return out;
 }
 

@@ -93,6 +93,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(EvergreenState, EVERGREEN)
 #define EG_SRC_VBLANK_D1        1               /* D1..D6: 1..6 */
 #define EG_SRC_HPD              42
 #define EG_SRC_CP_EOP           181
+/*
+ * A fence interrupt with this flag goes out only if CP_INT_CNTL enables
+ * timestamp interrupts when the fence completes, as on the hardware.  The
+ * driver can enable them after the CP read the EOP packet.
+ */
+#define EG_IRQ_IF_TS_ENABLED    (1 << 16)
 #define EG_SRC_DMA_TRAP         224
 
 /* --- command processor --- */

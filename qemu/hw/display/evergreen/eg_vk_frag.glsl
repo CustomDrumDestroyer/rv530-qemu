@@ -13,9 +13,15 @@
  * With EVK_VS defined, the same source is the vertex shader of a draw
  * whose VS runs on the GPU: the translated VS (eg_vk_ps.c, "vs_run()")
  * takes the place of the program, and the fragment-only parts drop out.
+ * With EVK_CS defined, it is a compute shader: the translated compute
+ * program (eg_vk_ps.c, "cs_run()") runs once for each guest thread, and
+ * writes its results through MEM_RAT (rat_store()).
  */
 #extension GL_EXT_control_flow_attributes : require
-#ifndef EVK_VS
+#ifdef EVK_CS
+layout(local_size_x = 64) in;
+#define EVK_WR coherent
+#elif !defined(EVK_VS)
 #extension GL_ARB_fragment_shader_interlock : require
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_quad : require
@@ -69,7 +75,7 @@ struct Draw {
 
 layout(std430, set = 0, binding = 0) EVK_WR buffer VramBuf { uint vram[]; };
 layout(std430, set = 0, binding = 1) readonly buffer DrawBuf { Draw draws[]; };
-#ifndef EVK_VS
+#if !defined(EVK_VS) && !defined(EVK_CS)
 layout(std430, set = 0, binding = 3) buffer CountBuf { uint zpass_count[]; };
 #endif
 layout(std430, set = 0, binding = 4) EVK_WR buffer SysBuf { uint sysram[]; };
@@ -85,7 +91,10 @@ layout(push_constant) uniform PC { uint draw; } pc;
 layout(std430, set = 0, binding = 8) buffer DirtyBuf { uint vram_dirty[]; };
 #endif
 
-#ifndef EVK_VS
+#ifdef EVK_CS
+/* the thread: its index in the group and its group (R0.xyz, R1.xyz) */
+uvec3 cs_l, cs_g;
+#elif !defined(EVK_VS)
 /*
  * The PS inputs of the triangle's three vertices, in submission order.
  * One array per input: with a single "v_p[][EVK_MAX_PARAMS]" some drivers
@@ -672,7 +681,7 @@ uvec4 sample_level(uint s, uint ss, uint lv, float u, float v, int slice, bool l
     return U(top + (bot - top) * ay);
 }
 
-#ifndef EVK_VS
+#if !defined(EVK_VS) && !defined(EVK_CS)
 /* quad neighbours: fragment (x, y) parity picks the swap that reaches them */
 void quad_corners(vec2 c, out vec2 tl, out vec2 tr, out vec2 bl)
 {
@@ -698,7 +707,7 @@ bool quad_any(bool b)
     return v != 0u;
 }
 #else
-/* a vertex has no quad neighbours: no derivatives */
+/* a vertex or a compute thread has no quad neighbours: no derivatives */
 void quad_corners(vec2 c, out vec2 tl, out vec2 tr, out vec2 bl)
 {
     tl = c; tr = c; bl = c;
@@ -948,7 +957,7 @@ float cube_res(float vx, float vy, float vz, int k)
     return k == 0 ? tc : k == 1 ? sc : k == 2 ? 2.0 * abs(ma) : id;
 }
 
-#ifndef EVK_VS
+#if !defined(EVK_VS) && !defined(EVK_CS)
 /*
  * PS input n (a literal) of vertex k.  A flat input takes vertex 2: the
  * draw puts the provoking vertex last (the CPU path copies it to all
@@ -961,6 +970,10 @@ bool is_front()
 {
     return MISC(EVK_M_GPU_VS) != 0u ? gl_FrontFacing : v_front != 0u;
 }
+#endif
+
+#ifdef EVK_CS
+void rat_store(uint n, uint inst, uvec4 a, uvec4 v, uint mask, uint es);
 #endif
 
 /* ps_run(): the translated pixel shader */
@@ -1238,6 +1251,49 @@ void cb_write(uint n, int x, int y, uvec4 col)
     cb_store(n, addr, out_px, px);
 }
 
+#ifdef EVK_CS
+/*
+ * MEM_RAT of a compute shader (eg_compute.c eg_compute_rat): RAT n is
+ * CB_COLORn.  STORE_TYPED writes pixel (a.x, a.y) without blend or logic
+ * op.  STORE_RAW writes ELEM_SIZE + 1 dwords of element a.x to a linear
+ * buffer.
+ */
+void rat_store(uint n, uint inst, uvec4 a, uvec4 v, uint mask, uint es)
+{
+    bool g = (CB_FLAGS(n) & EVK_SF_GART) != 0u;
+    if (inst == 1u) {
+        if (a.x >= D.cb[n].width || a.y >= D.cb[n].height) return;
+        uint addr = D.cb[n].base + tile_offset(cb_tile(n), a.x, a.y);
+        uvec4 px = cb_read(n, addr);
+        cb_store(n, addr, cb_pack(n, v, px, mask), px);
+    } else if (inst == 2u) {
+        [[dont_unroll]] for (uint k = 0u; k <= es; k++) {
+            if (((mask >> k) & 1u) != 0u) wr32(g, D.cb[n].base + (a.x * (es + 1u) + k) * 4u, v[k]);
+        }
+    }
+}
+
+/*
+ * One guest thread for each invocation, numbered as eg_compute.c does:
+ * thread t is thread t % TPG of group t / TPG.
+ */
+void main()
+{
+    uint t = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 64u;
+    if (t >= MISC(EVK_M_CS)) return;
+    uint tpg = MISC(EVK_M_CS + 1u), g = t / tpg, l = t % tpg;
+    uvec3 gs = uvec3(MISC(EVK_M_CS + 2u), MISC(EVK_M_CS + 3u), MISC(EVK_M_CS + 4u));
+    uvec3 gn = uvec3(MISC(EVK_M_CS + 5u), MISC(EVK_M_CS + 6u), MISC(EVK_M_CS + 7u));
+    uvec3 g0 = uvec3(MISC(EVK_M_CS + 8u), MISC(EVK_M_CS + 9u), MISC(EVK_M_CS + 10u));
+    cs_l = uvec3(l % gs.x, (l / gs.x) % gs.y, l / (gs.x * gs.y));
+    cs_g = g0 + uvec3(g % gn.x, (g / gn.x) % gn.y, g / (gn.x * gn.y));
+    alive = true;
+    has_grad = false;
+    grad_h = vec4(0.0);
+    grad_v = vec4(0.0);
+    cs_run();
+}
+#else
 bool cliprect_pass(int x, int y)
 {
     uint rule = MISC(EVK_M_CLIP_RULE);
@@ -1310,6 +1366,7 @@ void main()
     }
     endInvocationInterlockARB();
 }
+#endif
 #else
 /* ------------------------------------------------------------------ */
 /* Vertex shader: eg_draw.c to_window() and clip_tri() on the GPU      */

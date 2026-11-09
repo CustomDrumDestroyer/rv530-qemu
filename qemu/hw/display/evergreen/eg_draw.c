@@ -77,7 +77,7 @@ void eg_gfx_reset(EvergreenState *s)
     /* the host side lives on across resets */
     EgVk *vk = g->vk;
     MemoryRegion *sysram = g->vk_sysram;
-    GHashTable *ps_cache = g->ps_cache;
+    GHashTable *ps_cache = g->ps_cache, *cs_cache = g->cs_cache;
     QEMUTimer *idle = g->vk_idle_flush, *poll = g->vk_poll;
     QEMUBH *done_bh = g->vk_done_bh;
     GArray *fence_ops = g->fence_ops;
@@ -91,6 +91,7 @@ void eg_gfx_reset(EvergreenState *s)
     g->vk = vk;
     g->vk_sysram = sysram;
     g->ps_cache = ps_cache;
+    g->cs_cache = cs_cache;             /* entries check their code at each use */
     g->vk_idle_flush = idle;
     g->vk_poll = poll;
     g->vk_done_bh = done_bh;
@@ -2377,6 +2378,177 @@ static bool vk_prepare(DrawCtx *dc, FbState *fb, VkPrep *vp, char *why, size_t w
     return true;
 }
 
+/* a compute program translated for the GPU (eg_gfx_vk_dispatch) */
+typedef struct CsEntry {
+    uint32_t *code;                     /* the dwords the translation read */
+    uint32_t ndw;
+    char *glsl;                         /* NULL: not translatable (why) */
+    EvkProgInfo info;
+    uint64_t hash;
+    char why[160];
+} CsEntry;
+
+static void cs_entry_free(gpointer p)
+{
+    CsEntry *e = p;
+
+    g_free(e->code);
+    free(e->glsl);
+    g_free(e);
+}
+
+/* the translation of the compute program at 'pgm', made again if its code changed */
+static CsEntry *cs_entry(EvergreenState *s, uint64_t pgm)
+{
+    EgGfx *g = s->gfx;
+    CsEntry *e;
+    EgProgram p;
+
+    if (!g->cs_cache) {
+        g->cs_cache = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free,
+                                            cs_entry_free);
+    }
+    e = g_hash_table_lookup(g->cs_cache, &pgm);
+    if (e) {
+        g_autofree uint32_t *now = g_new(uint32_t, e->ndw ? e->ndw : 1);
+        if (eg_gpu_read(s, pgm, now, e->ndw * 4) && !memcmp(now, e->code, e->ndw * 4)) {
+            return e;
+        }
+    }
+    e = g_new0(CsEntry, 1);
+    eg_program_load(s, &p, pgm, EG_STAGE_CS);
+    e->glsl = evk_cs_to_glsl(ps_fetch, &p, &e->info, e->why, sizeof(e->why));
+    e->ndw = MIN(e->info.ndw, p.ndw);
+    e->code = g_memdup2(p.code, e->ndw * 4 + 4);
+    e->hash = fnv64(0xcbf29ce484222325ull, e->code, e->ndw * 4) ^ evk_ps_build_id();
+    eg_program_free(&p);
+    if (!e->glsl) {
+        eg_gfx_warn(s, 0xf3, "evergreen: a compute shader stays on the CPU path: %s\n", e->why);
+        trace_eg_vk_fallback(e->why);
+    }
+    g_hash_table_insert(g->cs_cache, g_memdup2(&pgm, sizeof(pgm)), e);
+    return e;
+}
+
+/*
+ * A compute dispatch on the host GPU.  It has the translated program
+ * (evk_cs_to_glsl), the LS constant caches, and the LS loop constants.  It
+ * also has the compute textures (resources 816+, samplers 90+) and the RATs
+ * it writes (CB_COLORn, with the size of CB_COLORn_DIM).  The dispatch goes
+ * into the current batch, in order with the draws.
+ */
+bool eg_gfx_vk_dispatch(EvergreenState *s, const uint32_t gn[3], const uint32_t gs[3],
+                        const uint32_t g0[3], uint64_t pgm)
+{
+    EgGfx *g = s->gfx;
+    g_autofree EvkDraw *d = NULL;
+    EgVkDrawReq r = { 0 };
+    CsEntry *e;
+    uint64_t total, wg;
+    char why[160];
+    int i, k;
+
+    if (!g->vk) {
+        return false;
+    }
+    total = (uint64_t)gn[0] * gn[1] * gn[2] * gs[0] * gs[1] * gs[2];
+    if (!total || total > 0xffffffffull) {
+        return false;
+    }
+    e = cs_entry(s, pgm);
+    if (!e->glsl) {
+        return false;
+    }
+    d = g_new0(EvkDraw, 1);
+    r.draw = d;
+    r.cs_glsl = e->glsl;
+    r.prog_hash = e->hash;
+
+    for (i = 0; i < e->info.nkc; i++) {
+        uint32_t bank = e->info.kc_bank[i] & 15, mode = e->info.kc_mode[i];
+        uint32_t reg = CTX(s, 0x28f40 + 4 * bank);     /* SQ_ALU_CONST_CACHE_LS_n */
+        if (mode && !reg) {
+            snprintf(why, sizeof(why), "kcache bank %u without a buffer", bank);
+            goto cpu;
+        }
+        if (mode) {
+            eg_gpu_read(s, ((uint64_t)reg << 8) + (uint64_t)e->info.kc_addr[i] * 16 * 16,
+                        d->kc[i], (mode == 2 ? 32 : 16) * 16);
+        }
+    }
+    memcpy(d->loopc, &g->loop_const[160], sizeof(d->loopc));
+    for (i = 0; i < e->info.ntex; i++) {
+        uint32_t rid = 816 + e->info.tex_rid[i];
+        uint64_t ro[2], rl[2];
+        int n;
+        if (!vk_tex_build(s, g->resource[rid & (EG_NUM_RESOURCES - 1)], &d->tex[i], ro, rl, &n)) {
+            snprintf(why, sizeof(why), "texture %u not in VRAM or the GART", rid);
+            goto cpu;
+        }
+        if (n && r.nrd < EVK_MAX_TEX + EVK_MAX_VBUF) {
+            uint64_t lo = ro[0], hi = ro[0] + rl[0];
+            for (k = 1; k < n; k++) {
+                lo = MIN(lo, ro[k]);
+                hi = MAX(hi, ro[k] + rl[k]);
+            }
+            r.rd_off[r.nrd] = lo;
+            r.rd_len[r.nrd] = hi - lo;
+            r.nrd++;
+        }
+    }
+    for (i = 0; i < e->info.nsmp; i++) {
+        memcpy(d->smp[i], g->sampler[(90 + e->info.smp_sid[i]) & (EG_NUM_SAMPLERS - 1)], 12);
+    }
+    for (i = 0; i < 8; i++) {
+        uint32_t dim = CTX(s, 0x28c78 + 0x3c * i);    /* CB_COLORn_DIM */
+        EvkSurf *o = &d->cb[i];
+        CBuf c;
+        if (!((e->info.rat_mask >> i) & 1)) {
+            continue;
+        }
+        cb_setup(s, &c, i, true);
+        if (!c.enabled || !vk_surf(s, o, c.base, &c.tile)) {
+            snprintf(why, sizeof(why), "RAT %d not in VRAM or the GART", i);
+            goto cpu;
+        }
+        o->flags |= cb_is_float(c.fmt) ? EVK_SF_FLOAT : 0;
+        o->fmt = c.fmt;
+        o->number = c.number;
+        for (k = 0; k < 4; k++) {
+            o->chmap |= (uint32_t)(c.ch_comp[k] < 0 ? 15 : c.ch_comp[k]) << (4 * k);
+            o->bits |= (uint32_t)cb_bits[c.fmt][k] << (8 * k);
+        }
+        o->bpp = c.bpp;
+        o->nch = c.nch;
+        o->mask = 0xf;
+        o->width = MIN(c.width, (dim & 0xffff) + 1);
+        o->height = MIN(c.height, (dim >> 16) + 1);
+        vk_range(r.wr_off, r.wr_len, &r.nwr, 10, o, o->base, &c.tile);
+        r.wr_sig[r.nwr - 1] = c.base ^ ((uint64_t)c.fmt << 40);
+    }
+    d->misc[EVK_M_BOOLC] = g->bool_const[4];
+    d->misc[EVK_M_CS] = (uint32_t)total;
+    d->misc[EVK_M_CS + 1] = gs[0] * gs[1] * gs[2];
+    for (i = 0; i < 3; i++) {
+        d->misc[EVK_M_CS + 2 + i] = gs[i];
+        d->misc[EVK_M_CS + 5 + i] = gn[i];
+        d->misc[EVK_M_CS + 8 + i] = g0[i];
+    }
+    wg = (total + 63) / 64;
+    r.cs_groups[0] = (uint32_t)MIN(wg, 65535u);
+    r.cs_groups[1] = (uint32_t)((wg + r.cs_groups[0] - 1) / r.cs_groups[0]);
+    if (eg_vk_dispatch(g->vk, &r, why, sizeof(why))) {
+        return true;
+    }
+cpu:
+    eg_gfx_warn(s, 0xf4, "evergreen: a compute dispatch runs on the CPU: %s\n", why);
+    if (getenv("EG_CS_PROFILE")) {
+        qemu_log("evergreen: compute at %" PRIx64 " on the CPU: %s\n", pgm, why);
+    }
+    trace_eg_vk_fallback(why);
+    return false;
+}
+
 /* one window-space triangle, with the PS inputs as the CPU path sets them up */
 static void vk_add_tri(DrawCtx *dc, const EgVert *const v[3], const EgVert *prov, bool front)
 {
@@ -2613,7 +2785,11 @@ static void fence_apply(EvergreenState *s, const EgFenceOp *op)
         eg_gpu_write(s, op->addr, op->data, op->len);
     }
     if (op->irq >= 0) {
-        eg_ih_push(s, op->irq, 0);
+        if (!(op->irq & EG_IRQ_IF_TS_ENABLED)) {
+            eg_ih_push(s, op->irq, 0);
+        } else if (s->regs[EG_CP_INT_CNTL >> 2] & EG_TIME_STAMP_INT_ENABLE) {
+            eg_ih_push(s, op->irq & ~EG_IRQ_IF_TS_ENABLED, 0);
+        }
     }
 }
 

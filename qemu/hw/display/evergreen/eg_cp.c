@@ -128,8 +128,7 @@ static void eg_cp_pkt3(EvergreenState *s, uint32_t op, const uint32_t *d, uint32
             uint32_t data_sel = d[2] >> 29, int_sel = (d[2] >> 24) & 3;
             uint32_t v[2] = { cpu_to_le32(d[3]), cpu_to_le32(d[4]) };
             uint64_t ts = cpu_to_le64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
-            int irq = int_sel && (s->regs[EG_CP_INT_CNTL >> 2] & EG_TIME_STAMP_INT_ENABLE) ?
-                      EG_SRC_CP_EOP : -1;
+            int irq = int_sel ? EG_SRC_CP_EOP | EG_IRQ_IF_TS_ENABLED : -1;
             int len = data_sel == 1 ? 4 : data_sel == 2 || data_sel == 3 ? 8 : 0;
             eg_gfx_fence(s, a, data_sel == 3 ? (void *)&ts : (void *)v, len, irq);
         }

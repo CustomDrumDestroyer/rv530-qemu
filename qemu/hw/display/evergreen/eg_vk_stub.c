@@ -22,6 +22,11 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
     return false;
 }
 
+bool eg_vk_dispatch(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
+{
+    return false;
+}
+
 bool eg_vk_has_pipeline(EgVk *vk, uint64_t prog_hash)
 {
     return false;

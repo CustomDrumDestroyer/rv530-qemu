@@ -107,7 +107,10 @@ enum {
     EVK_M_ISRC,                     /* per PS input: VS param (bits 0-7, 255:
                                      * default) | default value << 8 */
     EVK_M_EARLY_Z = EVK_M_ISRC + 12, /* 1: depth test before the program */
-    EVK_M_COUNT
+    /* a compute dispatch: the thread count, the threads per group, the
+     * group size (3), the group count (3), the first group (3) */
+    EVK_M_CS,
+    EVK_M_COUNT = EVK_M_CS + 11
 };
 #define EVK_MISC_WORDS 96
 
@@ -148,6 +151,7 @@ typedef struct EvkProgInfo {
     uint8_t kc_bank[EVK_MAX_KC], kc_mode[EVK_MAX_KC], kc_addr[EVK_MAX_KC];
     uint32_t ndw;                   /* program dwords the translation depends on */
     bool uses_cfile;                /* reads the constant file (D.cfile) */
+    uint32_t rat_mask;              /* compute: the RATs (CB_COLORn) it writes */
 } EvkProgInfo;
 
 /*
@@ -168,6 +172,15 @@ char *evk_ps_to_glsl(EvkFetchFn fetch, void *opaque, uint32_t baryc, uint32_t in
  */
 char *evk_vs_to_glsl(EvkFetchFn fetch, void *opaque, EvkFetchFn fetch_fs, void *fs_opaque,
                      EvkProgInfo *info, char *why, size_t whylen);
+/*
+ * The same for a compute shader (DISPATCH_DIRECT), into "void cs_run()".
+ * R0.xyz is the thread's index in its group, and R1.xyz is the group's
+ * index.  MEM_RAT goes to rat_store().  The program uses the PS tables of
+ * EvkDraw (kcache windows, textures, samplers, loop constants) and
+ * CB_COLORn as the RATs.
+ */
+char *evk_cs_to_glsl(EvkFetchFn fetch, void *opaque, EvkProgInfo *info, char *why,
+                     size_t whylen);
 /* bumped whenever the translator's output changes (cache key) */
 uint32_t evk_ps_build_id(void);
 
@@ -208,10 +221,20 @@ typedef struct EgVkDrawReq {
     const uint32_t *idx;
     uint32_t nidx, ninst;
     bool cull_front, cull_back, front_ccw;
+    /* a compute dispatch (eg_vk_dispatch) */
+    const char *cs_glsl;
+    uint32_t cs_groups[2];
 } EgVkDrawReq;
 
 /* false (nothing queued) when the pipeline is not usable (yet) */
 bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen);
+/*
+ * A compute dispatch in the current batch: req->cs_glsl (evk_cs_to_glsl),
+ * req->prog_hash, req->draw (misc[EVK_M_CS...] set), the read and write
+ * ranges, and req->cs_groups (workgroups of 64 invocations in x and y).
+ * False (nothing queued) when the pipeline is not usable (yet).
+ */
+bool eg_vk_dispatch(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen);
 bool eg_vk_has_pipeline(EgVk *vk, uint64_t prog_hash);
 bool eg_vk_set_sysram(EgVk *vk, void *ram, uint64_t size, char *err, size_t errlen);
 /* GART page -> sysram page (bit 31: VRAM page instead), ~0 = unmapped */

@@ -78,6 +78,7 @@ typedef struct EgGfx {
     uint64_t gart_key;
     void *vk_tex;               /* VkTexEntry cache (eg_draw.c) */
     void *pgm_fast;             /* PgmFast table (eg_draw.c) */
+    GHashTable *cs_cache;               /* compute program address -> CsEntry */
     GHashTable *ps_cache;               /* PS hash -> EgPsEntry */
     QEMUTimer *vk_idle_flush;           /* runs batches left after a ring kick */
     QEMUTimer *vk_poll;                 /* completes fences of running batches */
@@ -199,6 +200,14 @@ void *eg_cb_open(EvergreenState *s, int i);
 void eg_cb_store(EvergreenState *s, void *cb, uint32_t x, uint32_t y, const EgVec4 *v,
                  uint32_t mask);
 void eg_cb_close(EvergreenState *s, void *cb);
+
+/*
+ * eg_draw.c: a compute dispatch on the host GPU.  gn: the group count, gs:
+ * the group size, g0: the first group (each x, y, z), pgm: the program
+ * address.  False: the CPU path must run it (nothing queued).
+ */
+bool eg_gfx_vk_dispatch(EvergreenState *s, const uint32_t gn[3], const uint32_t gs[3],
+                        const uint32_t g0[3], uint64_t pgm);
 
 /* eg_compute.c */
 void eg_compute_dispatch(EvergreenState *s, const uint32_t *d, uint32_t n);
