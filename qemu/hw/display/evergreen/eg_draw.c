@@ -3878,6 +3878,28 @@ static void vk_verify(EvergreenState *s, const IndexSrc *src, VkVerify *vv)
                 const EvkDraw *d = &vv->vp->draw;
                 g_file_set_contents(bin, (char *)vv->ps_code, vv->ps_ndw * 4, NULL);
                 g_file_set_contents(gl, vv->vp->ps->glsl, -1, NULL);
+                if (vv->vp->req.vs_glsl) {
+                    /* the GPU vertex shader, its kcache windows and the indices */
+                    g_autofree char *vg = g_strconcat(base, ".vs.glsl", NULL);
+                    g_autofree char *vk = g_strconcat(base, ".vs.txt", NULL);
+                    g_autoptr(GString) vt = g_string_new(NULL);
+                    const EgVkDrawReq *r = &vv->vp->req;
+                    g_file_set_contents(vg, r->vs_glsl, -1, NULL);
+                    g_string_append_printf(vt, "nidx %u ninst %u idx", r->nidx, r->ninst);
+                    for (uint32_t j = 0; j < r->nidx && j < 64; j++) {
+                        g_string_append_printf(vt, " %u", r->idx[j]);
+                    }
+                    for (int j = 0; j < EVK_MAX_KC; j++) {
+                        g_string_append_printf(vt, "\nvs_kc%d", j);
+                        for (int c = 0; c < 8; c++) {
+                            g_string_append_printf(vt, " [%08x %08x %08x %08x]",
+                                                   d->vs_kc[j][c][0], d->vs_kc[j][c][1],
+                                                   d->vs_kc[j][c][2], d->vs_kc[j][c][3]);
+                        }
+                    }
+                    g_string_append(vt, "\n");
+                    g_file_set_contents(vk, vt->str, vt->len, NULL);
+                }
                 for (int j = 0; j < vv->vp->ps->info.ntex; j++) {
                     const EvkTex *x = &d->tex[j];
                     g_string_append_printf(t, "tex%d rid %u flags %x fmt %u numf %u comp %x dsel %03x"

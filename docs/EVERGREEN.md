@@ -181,7 +181,8 @@ GPU through MoltenVK. We tested Snow Leopard (10.6.8) on an Apple M4:
 | System Profiler | ATI Radeon HD 5770, 1024 MB |
 | Quartz Extreme | `CGDisplayUsesOpenGLAcceleration` is 1 |
 | Chess | Correct. All draws on the GPU (`EG_PROFILE`) |
-| `EG_VK_VERIFY` (1 vCPU, 42650 GPU draws) | 7211 draws have 1-bit differences in a few bytes (median 0.006% of the bytes). 16 draws have larger differences (see [Known gaps](#known-gaps)) |
+| Menu bar clock | Correct, 1 and 4 vCPUs |
+| `EG_VK_VERIFY` (1 vCPU) | 77 draws with differences, all small (1-bit) |
 
 Metal does not have some features that the backend uses on other GPUs. On
 MoltenVK the backend does these things differently:
@@ -200,6 +201,11 @@ MoltenVK the backend does these things differently:
 - **Names.** Some function names of the template are also names in the Metal
   standard library (`border_color`, `quad_any`, `wrap`, `rdn`, `wrn`). They
   have the prefix `evk_`.
+- **Cull state.** MoltenVK did not always apply a dynamic cull mode or front
+  face that was equal to the last one set. Then the GPU culled a quad that
+  the guest draws, and old content stayed (the menu bar clock showed old
+  digits under new ones). On MoltenVK, each draw first sets other values, so
+  that each set is a change.
 
 `EG_VK_PERVERTEX=0` selects the buffer path on other GPUs too, for example to
 compare the two paths on Linux.
@@ -494,10 +500,5 @@ These measurements show where the time goes in Nexuiz now:
 - In a test after a change of the template, a Lion guest with one vCPU
   restarted one time while it compiled its pipelines again. We could not
   make it occur again.
-- On macOS hosts (see [macOS hosts](#macos-hosts-apple-silicon-tcg)), with 4
-  vCPUs, a screen-aligned rectangle showed stale content in Chess one time.
-  In that run, some draws went to the CPU while their pipelines compiled.
-  With `EG_VK_SYNC_COMPILE=1`, all draws went to the GPU and the rectangle
-  did not occur. With `EG_VK_VERIFY`, 16 of 42650 draws (three programs on
-  the same surface) were very different from the CPU result. We did not find
-  the cause of these two problems.
+- On macOS hosts, we tested only Snow Leopard, and only the desktop, Chess,
+  and the menu bar.

@@ -2494,6 +2494,18 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
     vkCmdSetScissor(vk->cmd, 0, 1, &sc);
     if (req->vs_glsl) {
         /* the guest's culling on the host rasterizer (CPU VS: done already) */
+        if (vk->portability) {
+            /*
+             * MoltenVK: a cull mode or front face equal to the last one set
+             * did not always reach the draw (after a new render encoder, the
+             * Metal state can be the default).  Then a quad of the menu bar
+             * clock was culled, and the old text stayed.  Set other values
+             * first, so that each set is a change.
+             */
+            vkCmdSetCullMode(vk->cmd, VK_CULL_MODE_FRONT_AND_BACK);
+            vkCmdSetFrontFace(vk->cmd, req->front_ccw ? VK_FRONT_FACE_CLOCKWISE
+                                                      : VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        }
         vkCmdSetCullMode(vk->cmd, (req->cull_front ? VK_CULL_MODE_FRONT_BIT : 0) |
                                   (req->cull_back ? VK_CULL_MODE_BACK_BIT : 0));
         vkCmdSetFrontFace(vk->cmd, req->front_ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE
@@ -2509,6 +2521,11 @@ bool eg_vk_draw(EgVk *vk, const EgVkDrawReq *req, char *why, size_t whylen)
         }
         vk->nidx += req->nidx;
     } else {
+        if (vk->portability) {
+            /* MoltenVK: make each set a change (see above) */
+            vkCmdSetCullMode(vk->cmd, VK_CULL_MODE_FRONT_AND_BACK);
+            vkCmdSetFrontFace(vk->cmd, VK_FRONT_FACE_CLOCKWISE);
+        }
         vkCmdSetCullMode(vk->cmd, VK_CULL_MODE_NONE);
         vkCmdSetFrontFace(vk->cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
         vkCmdDraw(vk->cmd, req->nverts, 1, vk->frame * EVK_VERT_SLOTS + vk->nverts, 0);
