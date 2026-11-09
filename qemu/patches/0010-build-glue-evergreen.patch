@@ -24,7 +24,7 @@ the rv530 EDID monitor model (rv530/r5xx_edid.c).
 +system_ss.add(when: 'CONFIG_RV530', if_true: files(
 +  'evergreen/evergreen.c', 'evergreen/eg_cp.c', 'evergreen/eg_dce.c', 'evergreen/eg_tile.c',
 +  'evergreen/eg_draw.c', 'evergreen/eg_shader.c', 'evergreen/eg_tex.c', 'evergreen/eg_hdp.c',
-+  'evergreen/eg_vk_ps.c', 'evergreen/eg_atom.c'))
++  'evergreen/eg_vk_ps.c', 'evergreen/eg_atom.c', 'evergreen/eg_compute.c'))
 +if rv530_vulkan.found() and rv530_shaderc.found()
 +  system_ss.add(when: 'CONFIG_RV530', if_true: [files('evergreen/eg_vk.c'), rv530_vulkan, rv530_shaderc])
 +else

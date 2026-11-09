@@ -146,6 +146,9 @@ static void eg_cp_pkt3(EvergreenState *s, uint32_t op, const uint32_t *d, uint32
             g_free(tmp);
         }
         break;
+    case PKT3_DISPATCH_DIRECT:
+        eg_compute_dispatch(s, d, n);
+        break;
     case PKT3_WAIT_REG_MEM:
     case PKT3_MEM_SEMAPHORE:
         /*

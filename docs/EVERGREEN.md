@@ -1,9 +1,9 @@
 # The Radeon HD 5770 device (experimental)
 
 `radeon-hd5770` is a second display device. It emulates an ATI Radeon HD 5770
-(Juniper, Evergreen family). Mac OS X 10.6 and 10.7 run on it with the ATI
-drivers from Apple (`ATIRadeonX3000`, framebuffer `Hoolock`). These drivers are
-not changed.
+(Juniper, Evergreen family). Mac OS X 10.6, 10.7, and 10.9 run on it with the
+drivers from Apple (`ATIRadeonX3000`, in 10.9 `AMDRadeonX3000`, framebuffer
+`Hoolock`). These drivers are not changed.
 Quartz Extreme and Core Image are enabled. The pixel work runs on the host GPU
 through Vulkan.
 
@@ -121,6 +121,27 @@ time, the frame rate is lower.
 ![Mission Control in Lion on the emulated HD 5770](img/hd5770-lion-missioncontrol.png)
 
 Mission Control in Lion on the emulated HD 5770, with Chess open.
+
+## OS X 10.9 Mavericks
+
+Mavericks (10.9, 13A603) runs on the HD 5770 with its own AMD drivers
+(`AMD5000Controller`, `AMDRadeonX3000`). Make the boot volume as for Lion,
+with the `SystemUUID` of the Mavericks volume. The boot volume must have a
+complete kernel cache. Without it, the `boot.efi` of 10.9 stops with no
+message.
+
+In 10.9, Core Image uses OpenCL. OpenCL sends its kernels to the GPU as
+compute dispatches (see [Compute](#compute)).
+
+We tested these items in Mavericks:
+
+| Item | Result |
+| --- | --- |
+| Login window, desktop, menu bar, Dock | Correct at 1440 x 900 |
+| Mission Control | Correct |
+| Chess | Correct |
+| `gltest`, `glms`, `gltex`, `gltexfmt`, `glstrip`, `gltexyuv` | The same results as in 10.6 |
+| Core Image | `ci_blur_check.py`: max diff 0. `ci_blur_bench.py`: approximately 1.3 s per frame (compute on the CPU) |
 
 ## The option ROM
 
@@ -258,6 +279,31 @@ Apple's GL engine sends its constants with `SET_ALU_CONST` and leaves the
 constant buffer address at 0. The device then reads kcache windows from the
 constant file of the stage.
 
+### Compute
+
+`DISPATCH_DIRECT` runs a compute shader (`eg_compute.c`). The shader
+interpreter runs it on the CPU. The device uses the registers and slots that
+Apple's OpenCL driver uses:
+
+- The program is at `SQ_PGM_START_LS`. The thread groups have
+  `SPI_COMPUTE_NUM_THREAD_X/Y/Z` threads.
+- Each thread starts with its index in the group in R0.xyz and the index of
+  its group in R1.xyz.
+- Constants come from the LS constant caches (`SQ_ALU_CONST_CACHE_LS_n`).
+  Textures use the fetch resources from 816 and the samplers from 90.
+- `MEM_RAT` writes the results. RAT n is `CB_COLORn`. The device writes
+  `STORE_TYPED` pixels with the format and tiling of the color buffer, and
+  `STORE_RAW` dwords to a linear buffer.
+
+Before a dispatch, the device waits for the GPU. After the dispatch, it marks
+the color buffers as dirty, so the GPU uses the new data. The caller and up to
+15 worker threads run batches of 16 threads. The CP releases the BQL during
+the dispatch, as it does while it waits for the GPU.
+
+Apple's Core Image kernels in 10.9 use ALU, `SAMPLE`, and `MEM_RAT`
+`STORE_TYPED` only. The device does not have local data share (LDS),
+barriers, or atomic RAT operations.
+
 ## Debugging
 
 | Variable | What it does |
@@ -284,6 +330,9 @@ constant file of the stage.
 | `EG_VK_DRAWS_HOST=1` | The shaders read the draw states from host memory |
 | `EG_MMIO_BQL=1` | All register accesses take the BQL, also the ring pointer |
 | `EG_VK_DRAWSTAMPS=1` | Writes a GPU timestamp after each draw, and logs the GPU time of each program |
+| `EG_CS_THREADS=n` | Compute dispatches use n worker threads and the caller (default: half the host CPUs, at most 16 threads in all) |
+| `EG_CS_PROFILE=1` | Logs the size and the time of each compute dispatch |
+| `EG_CS_DUMP=dir` | Writes the state and the program of the first 64 compute dispatches to `dir` |
 | `EG_VK_DEFS=...` | Adds lines to the start of each shader (`;` starts a new line). For experiments. A change compiles all pipelines again |
 
 `qemu/hw/display/evergreen/scripts/eg_vk_replay` runs a `.replay` file through
@@ -357,4 +406,8 @@ These measurements show where the time goes in Nexuiz now:
   show a surface while the GPU draws into it (tearing,
   [#16](https://github.com/CustomDrumDestroyer/rv530-qemu/issues/16)).
 - With `EG_VK_VERIFY` and more than one vCPU, Mac OS X can panic.
+- Compute dispatches run on the CPU. In 10.9, a Core Image blur of
+  1024 x 1024 takes approximately 1.3 s per frame. In 10.7, the same blur
+  uses GL and takes approximately 16 ms.
+- Compute shaders cannot use LDS, barriers, or atomic RAT operations.
 - We did not test macOS hosts with this device.

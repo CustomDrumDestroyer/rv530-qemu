@@ -81,6 +81,12 @@ if ! grep -q "evergreen/eg_atom.c" hw/display/meson.build; then
         hw/display/meson.build
     rm -f hw/display/meson.build.bak
 fi
+# trees patched before eg_compute.c (compute dispatch) existed
+if ! grep -q "evergreen/eg_compute.c" hw/display/meson.build; then
+    sed -i.bak "s|'evergreen/eg_atom.c'))|'evergreen/eg_atom.c', 'evergreen/eg_compute.c'))|" \
+        hw/display/meson.build
+    rm -f hw/display/meson.build.bak
+fi
 
 case "$(uname -s)" in
 Darwin)

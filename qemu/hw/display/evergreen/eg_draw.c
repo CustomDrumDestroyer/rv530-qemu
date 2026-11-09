@@ -427,7 +427,8 @@ static bool cb_is_float(uint32_t fmt)
 
 static void cb_setup(EvergreenState *s, CBuf *c, int i, bool unmasked)
 {
-    uint32_t r = 0x28c60 + 0x3c * i;
+    /* CB_COLOR8-11 (RAT targets only) have fewer registers */
+    uint32_t r = i < 8 ? 0x28c60 + 0x3c * i : 0x28e40 + 0x1c * (i - 8);
     uint32_t info = CTX(s, r + 0x10), attr = CTX(s, r + 0x14);
     uint32_t pitch = ((CTX(s, r + 4) & 0x7ff) + 1) * 8;
     uint32_t slice = ((CTX(s, r + 8) & 0x3fffff) + 1) * 64;
@@ -447,7 +448,7 @@ static void cb_setup(EvergreenState *s, CBuf *c, int i, bool unmasked)
     c->endian = info & 3;
     c->blend_clamp = (info >> 19) & 1;
     c->blend_bypass = (info >> 20) & 1;
-    c->blend = CTX(s, 0x28780 + 4 * i);
+    c->blend = i < 8 ? CTX(s, 0x28780 + 4 * i) : 0;
     for (k = 0; k < 4 && cb_bits[c->fmt][k]; k++) {
         bits += cb_bits[c->fmt][k];
     }
@@ -781,6 +782,56 @@ static void cb_write(DrawCtx *dc, FbState *fb, int x, int y, const EgVec4 *col, 
     } else {
         eg_gpu_write(dc->s, addr, px, c->bpp);
     }
+}
+
+/*
+ * CB_COLORn as the store target of a compute shader (a RAT).  The device
+ * writes the pixels without blend or logic op.
+ */
+void *eg_cb_open(EvergreenState *s, int i)
+{
+    CBuf *c = g_new(CBuf, 1);
+
+    cb_setup(s, c, i, true);
+    if (!c->enabled) {
+        g_free(c);
+        return NULL;
+    }
+    return c;
+}
+
+void eg_cb_store(EvergreenState *s, void *cb, uint32_t x, uint32_t y, const EgVec4 *v,
+                 uint32_t mask)
+{
+    CBuf *c = cb;
+    uint8_t px[16] = { 0 };
+    uint64_t addr;
+
+    if (x >= c->width || y >= c->height) {
+        return;
+    }
+    addr = eg_tile_offset(&c->tile, x, y);
+    if (c->host) {
+        cb_pack(c, v, c->host + addr, mask);
+        return;
+    }
+    if (mask != 0xf) {
+        eg_gpu_read(s, c->base + addr, px, c->bpp);
+    }
+    cb_pack(c, v, px, mask);
+    eg_gpu_write(s, c->base + addr, px, c->bpp);
+}
+
+void eg_cb_close(EvergreenState *s, void *cb)
+{
+    CBuf *c = cb;
+    uint64_t len = eg_tile_size(&c->tile);
+    uint8_t *p = eg_vram_ptr(s, c->base, len);
+
+    if (p) {
+        memory_region_set_dirty(&s->vram, p - s->vram_ptr, len);
+    }
+    g_free(c);
 }
 
 /* ------------------------------------------------------------------ */

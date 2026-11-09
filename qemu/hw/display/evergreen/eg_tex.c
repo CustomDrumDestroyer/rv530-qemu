@@ -267,7 +267,7 @@ static int stage_resource_base(const EgShader *sh)
     if (sh->in_fs) {
         return 992;
     }
-    return sh->stage == EG_STAGE_PS ? 0 : 176;
+    return eg_stage_res_base(sh->stage);
 }
 
 static void apply_dst(EgVec4 *dst, const EgVec4 *v, const uint32_t sel[4], bool int_fmt)
@@ -708,7 +708,7 @@ void eg_tex_fetch(EgShader *sh, const uint32_t *ins, uint32_t lanes)
     bool norm[4] = { (w1 >> 28) & 1, (w1 >> 29) & 1, (w1 >> 30) & 1, (w1 >> 31) & 1 };
     int8_t ioff[3];
     float ibias = (float)(int8_t)(((w1 >> 21) & 0x7f) << 1) / 32.0f;
-    int rbase = sh->stage == EG_STAGE_PS ? 0 : 176, sbase = sh->stage == EG_STAGE_PS ? 0 : 18;
+    int rbase = eg_stage_res_base(sh->stage), sbase = eg_stage_smp_base(sh->stage);
     const uint32_t *r = s->gfx->resource[(rbase + rid) & (EG_NUM_RESOURCES - 1)];
     const uint32_t *smp = s->gfx->sampler[(sbase + sid) & (EG_NUM_SAMPLERS - 1)];
     EgVec4 coord[EG_MAX_LANES], res[EG_MAX_LANES];

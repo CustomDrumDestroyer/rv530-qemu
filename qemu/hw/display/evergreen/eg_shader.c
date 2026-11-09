@@ -259,7 +259,8 @@ static void load_kcache_set(EgShader *sh, EgVec4 *dst, uint32_t bank, uint32_t m
         }
         sh->kc_key[slot] = key;
     }
-    uint32_t reg = sh->stage == EG_STAGE_PS ? 0x28940 : 0x28980;   /* ALU_CONST_CACHE_PS/VS_n */
+    /* ALU_CONST_CACHE_PS/VS/LS_n */
+    uint32_t reg = sh->stage == EG_STAGE_PS ? 0x28940 : sh->stage == EG_STAGE_CS ? 0x28f40 : 0x28980;
     uint64_t base;
     uint32_t n;
 
@@ -990,7 +991,8 @@ static uint32_t cond_mask(EgShader *sh, uint32_t w1)
     case 1:
         return 0;
     default:
-        b = (sh->s->gfx->bool_const[(sh->stage == EG_STAGE_PS ? 0 : 1)] >> cf_const) & 1;
+        b = (sh->s->gfx->bool_const[sh->stage == EG_STAGE_PS ? 0 :
+                                    sh->stage == EG_STAGE_CS ? 4 : 1] >> cf_const) & 1;
         return (cond == 2) == b ? act : 0;
     }
 }
@@ -1105,7 +1107,8 @@ static void run_cf(EgShader *sh, const EgProgram *p, bool is_fetch)
         case 0x04:                                      /* LOOP_START */
         case 0x06:                                      /* LOOP_START_DX10 */
         case 0x07: {                                    /* LOOP_START_NO_AL */
-            uint32_t c = sh->s->gfx->loop_const[(sh->stage == EG_STAGE_PS ? 0 : 32) +
+            uint32_t c = sh->s->gfx->loop_const[(sh->stage == EG_STAGE_PS ? 0 :
+                                                  sh->stage == EG_STAGE_CS ? 160 : 32) +
                                                  ((w1 >> 3) & 0x1f)];
             LoopState *l;
             if (lsp >= 8) {
@@ -1233,10 +1236,19 @@ static void run_cf(EgShader *sh, const EgProgram *p, bool is_fetch)
         case 0x18:                                      /* KILL */
             sh->killed |= cond_mask(sh, w1);
             break;
+        case 0x56:                                      /* MEM_RAT */
+        case 0x57:                                      /* MEM_RAT_CACHELESS */
+        case 0x5c:                                      /* MEM_RAT_COMBINED_CACHELESS */
+            if (sh->stage == EG_STAGE_CS) {
+                eg_compute_rat(sh, w0, w1, sh->active & sh->live & ~sh->killed);
+            } else {
+                eg_gfx_warn(sh->s, 0xe0 + (op & 0xf), "evergreen: CF memory export 0x%02x\n", op);
+            }
+            break;
         case 0x1a:                                      /* WAIT_ACK */
         case 0x1e:                                      /* WAVE_SYNC */
-        case 0x50: case 0x52: case 0x55: case 0x56: case 0x57:  /* memory exports */
-        case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c:
+        case 0x50: case 0x52: case 0x55:                /* memory exports */
+        case 0x58: case 0x59: case 0x5a: case 0x5b:
             if (op >= 0x50) {
                 eg_gfx_warn(sh->s, 0xe0 + (op & 0xf), "evergreen: CF memory export 0x%02x\n", op);
             }

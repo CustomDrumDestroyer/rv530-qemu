@@ -29,7 +29,18 @@
 #define EG_MAX_LANES        16          /* one 2x2 pixel quad (4), or 16 vertices */
 
 /* shader stages (resource / sampler / constant bases differ) */
-enum { EG_STAGE_PS, EG_STAGE_VS, EG_STAGE_FS };
+enum { EG_STAGE_PS, EG_STAGE_VS, EG_STAGE_FS, EG_STAGE_CS };
+
+/* the first fetch resource and sampler of a stage (compute uses the LS slots) */
+static inline int eg_stage_res_base(int stage)
+{
+    return stage == EG_STAGE_PS ? 0 : stage == EG_STAGE_CS ? 816 : 176;
+}
+
+static inline int eg_stage_smp_base(int stage)
+{
+    return stage == EG_STAGE_PS ? 0 : stage == EG_STAGE_CS ? 90 : 18;
+}
 
 typedef union EgVec4 {
     float f[4];
@@ -126,6 +137,7 @@ typedef struct EgShader {
     EgVec4 kc_cache[4][32];
     uint32_t kc_key[4];
     void *tex_cache;                    /* eg_tex.c: texture descriptors */
+    void *rat;                          /* eg_compute.c: RAT targets (compute only) */
 } EgShader;
 
 /* eg_shader.c */
@@ -181,5 +193,16 @@ bool eg_gfx_packet(EvergreenState *s, uint32_t op, const uint32_t *d, uint32_t n
 void eg_gfx_shadow_write(EvergreenState *s, int cls, uint32_t off, const uint32_t *v,
                          uint32_t n);
 void eg_gfx_warn(EvergreenState *s, int id, const char *fmt, ...) G_GNUC_PRINTF(3, 4);
+
+/* eg_draw.c: CB_COLORn as a store target of compute shaders (RAT) */
+void *eg_cb_open(EvergreenState *s, int i);
+void eg_cb_store(EvergreenState *s, void *cb, uint32_t x, uint32_t y, const EgVec4 *v,
+                 uint32_t mask);
+void eg_cb_close(EvergreenState *s, void *cb);
+
+/* eg_compute.c */
+void eg_compute_dispatch(EvergreenState *s, const uint32_t *d, uint32_t n);
+/* a MEM_RAT* CF instruction of a compute shader */
+void eg_compute_rat(EgShader *sh, uint32_t w0, uint32_t w1, uint32_t lanes);
 
 #endif
