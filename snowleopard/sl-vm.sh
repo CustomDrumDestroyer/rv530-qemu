@@ -28,7 +28,9 @@
 # folder from make-opencore.sh), ROM (VBIOS for the rv530; default the
 # synthetic AtomBIOS from scripts/atombios/mkrom.py, built into
 # build-rom/ on first use; a real dump also works), QMP (socket
-# path), QDISPLAY (QEMU -display backend, default none; gtk for a window),
+# path, or HOST:PORT for TCP; default 127.0.0.1:4444 on Windows),
+# SYSDISK_FORMAT (qcow2 or raw; raw for \\.\PhysicalDriveN on Windows),
+# QDISPLAY (QEMU -display backend, default none; gtk for a window),
 # VNC (display, default :2), SERIAL (default file:work/serial.log),
 # AUDIO (none or usb, with AUDIO_BACKEND / AUDIO_WAV), REFRESH (Hz of
 # the EDID's preferred mode, default 60, up to 240; lowered per size to what
@@ -41,8 +43,22 @@
 # host.sh: kvm on x86_64 Linux with /dev/kvm, hvf on an Intel Mac, else
 # tcg), TSC_HZ (TCG only, default 1200000000), EXTRA (extra QEMU args).
 # The QEMU log goes to work/qemu.log.
+#
+# Windows: run it from the MSYS2 UCRT64 shell (README.md, "Windows hosts").
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
+. "$HERE/host.sh"
+# Windows (MSYS2 or Git for Windows bash): QEMU is a native Windows program.
+# wp gives it Windows paths, and MSYS2 must not change the other arguments.
+wp() {
+    case "$1" in
+    \\*) printf '%s' "$1" ;;                     # \\.\PhysicalDriveN
+    *) if is_windows; then cygpath -m "$1"; else printf '%s' "$1"; fi ;;
+    esac
+}
+if is_windows; then
+    export MSYS2_ARG_CONV_EXCL='*'
+fi
 W=${WORK:-$HERE/work}
 mkdir -p "$W"
 # QEMU from scripts/setup-qemu.sh, else from a release package (bin/)
@@ -66,9 +82,20 @@ if [ ! -f "$ROM5770" ] && [ "$ROM5770" = "$HERE/../build-rom/hd5770-atombios.rom
     mkdir -p "$HERE/../build-rom"
     python3 "$HERE/../scripts/atombios/mkrom-evergreen.py" "$ROM5770" >/dev/null
 fi
-QMP=${QMP:-$W/qmp.sock}
+# QMP is a Unix socket, or HOST:PORT for TCP (the default on Windows, where
+# Python has no AF_UNIX; slctl.py takes both)
+if is_windows; then
+    QMP=${QMP:-127.0.0.1:4444}
+else
+    QMP=${QMP:-$W/qmp.sock}
+fi
+case "$QMP" in
+*/*|*\\*|*.sock) QMPARG=unix:$(wp "$QMP") ;;
+*:*) QMPARG=tcp:$QMP ;;
+*) QMPARG=unix:$(wp "$QMP") ;;
+esac
 VNC=${VNC:-:2}
-SERIAL=${SERIAL:-file:$W/serial.log}
+SERIAL=${SERIAL:-file:$(wp "$W/serial.log")}
 DISPLAY_MODE=${DISPLAY_MODE:-std}
 # OVMF from build-ovmf.sh (with the rv530 GOP driver) when it has been built,
 # else a release package's (firmware/), otherwise the distribution's (enough
@@ -90,8 +117,12 @@ done
 : "${OVMF_CODE:?set OVMF_CODE (run build-ovmf.sh, or install OVMF)}"
 : "${OSK:?set OSK to the SMC key}"
 [ -f "$W/OVMF_VARS.fd" ] || cp "$OVMF_VARS_TEMPLATE" "$W/OVMF_VARS.fd"
-[ -f "$SYSDISK" ] || "$QEMU_IMG" create -f qcow2 "$SYSDISK" 40G >/dev/null
-. "$HERE/host.sh"
+# SYSDISK_FORMAT: raw for a disk image or, on Windows, \\.\PhysicalDriveN
+SYSDISK_FORMAT=${SYSDISK_FORMAT:-qcow2}
+case "$SYSDISK" in
+\\*) ;;
+*) [ -f "$SYSDISK" ] || "$QEMU_IMG" create -f qcow2 "$SYSDISK" 40G >/dev/null ;;
+esac
 if [ -z "${ACCEL:-}" ]; then
     ACCEL=$(host_accel)
     [ "$ACCEL" = tcg ] && ACCEL=tcg,thread=multi,tb-size=512
@@ -123,6 +154,10 @@ RP=${RP:-pci-bridge,id=rp1,bus=pcie.0,addr=0x1,chassis_nr=1,shpc=off}
 # connection to 10.0.2.100:7651 is relayed to it; the GTK UI (with
 # clipboard=on) or the Cocoa UI (always) syncs the host side.
 CLIP=()
+if is_windows && { [ "${CLIPBOARD:-0}" = 1 ] || [ "${DND:-0}" = 1 ]; }; then
+    echo "note: CLIPBOARD and DND do not work on Windows hosts yet; they are off" >&2
+    CLIPBOARD=0 DND=0
+fi
 if [ "${CLIPBOARD:-0}" = 1 ]; then
     rm -f "$W/clip.sock"
     CLIP=(-chardev "socket,id=clip,path=$W/clip.sock,server=on,wait=off")
@@ -133,11 +168,11 @@ fi
 case "$DISPLAY_MODE" in
 std)   DISP=(-vga std) ;;
 rv530) DISP=(-vga none -device $RP
-             -device rv530,id=gpu,bus=rp1,romfile="$ROM",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
+             -device rv530,id=gpu,bus=rp1,romfile="$(wp "$ROM")",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
 both)  DISP=(-vga std -device $RP
-             -device rv530,id=gpu,bus=rp1,romfile="$ROM",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
+             -device rv530,id=gpu,bus=rp1,romfile="$(wp "$ROM")",xres=${XRES:-1440},yres=${YRES:-900},xmax=${XMAX:-2560},ymax=${YMAX:-1600}${REFRESH:+,refresh=$REFRESH}${AUTORESIZE:+,resize=on}${RVOPTS:+,$RVOPTS}) ;;
 hd5770) DISP=(-vga none -device $RP
-             -device radeon-hd5770,id=gpu,bus=rp1,romfile="$ROM5770",xres=${XRES:-1440},yres=${YRES:-900}${EGOPTS:+,$EGOPTS}) ;;
+             -device radeon-hd5770,id=gpu,bus=rp1,romfile="$(wp "$ROM5770")",xres=${XRES:-1440},yres=${YRES:-900}${EGOPTS:+,$EGOPTS}) ;;
 *) echo "DISPLAY_MODE must be std, rv530, both or hd5770" >&2; exit 1 ;;
 esac
 # AUTORESIZE=1 with the Cocoa window: it can only be resized with Zoom To Fit
@@ -168,7 +203,7 @@ usb)  # the first driver this QEMU has and can load (a release package has
       # PulseAudio and ALSA, as modules that need the host's libraries)
       AB=${AUDIO_BACKEND:-}
       if [ -z "$AB" ]; then
-          case "$(uname -s)" in Darwin) AB=coreaudio ;; *)
+          case "$(uname -s)" in Darwin) AB=coreaudio ;; MINGW*|MSYS*|CYGWIN*) AB=dsound ;; *)
               DRV=$("$QEMU" -audiodev help)
               for d in pipewire pa alsa; do
                   if grep -qx "$d" <<<"$DRV"; then AB=$d; break; fi
@@ -176,41 +211,41 @@ usb)  # the first driver this QEMU has and can load (a release package has
               [ -n "$AB" ] || { echo "AUDIO=usb: no PipeWire, PulseAudio, or ALSA driver; install libpulse or set AUDIO_BACKEND" >&2; exit 1; } ;;
           esac
       fi
-      [ "$AB" = wav ] && AB="wav,path=${AUDIO_WAV:-$W/audio.wav}"
+      [ "$AB" = wav ] && AB="wav,path=$(wp "${AUDIO_WAV:-$W/audio.wav}")"
       SND=(-audiodev "$AB,id=snd0" -device usb-audio,audiodev=snd0,bus=uhci.0) ;;
 *) echo "AUDIO must be none or usb" >&2; exit 1 ;;
 esac
 if [ -f "$ESP.img" ]; then
-    ESPDRV=(-drive id=esp,if=none,format=raw,file="$ESP.img")
+    ESPDRV=(-drive id=esp,if=none,format=raw,file="$(wp "$ESP.img")")
 else
-    ESPDRV=(-drive id=esp,if=none,format=raw,file=fat:rw:"$ESP")
+    ESPDRV=(-drive id=esp,if=none,format=raw,file=fat:rw:"$(wp "$ESP")")
 fi
 DISKS=("${ESPDRV[@]}" -device ide-hd,bus=ide.0,drive=esp
-       -drive id=sys,if=none,format=qcow2,file="$SYSDISK" -device ide-hd,bus=ide.1,drive=sys)
+       -drive id=sys,if=none,format=$SYSDISK_FORMAT,file="$(wp "$SYSDISK")" -device ide-hd,bus=ide.1,drive=sys)
 if [ "${INSTALL:-0}" = 1 ]; then
     # INSTALLER may be the raw HFS+ volume (attached as a disk) or the original
     # DVD image (*.iso, attached as an AHCI DVD drive so its 2048-byte Apple
     # partition map is read correctly by both OpenCore and XNU)
     case "$INSTALLER" in
-    *.iso) DISKS+=(-drive id=inst,if=none,format=raw,media=cdrom,readonly=on,file="$INSTALLER"
+    *.iso) DISKS+=(-drive id=inst,if=none,format=raw,media=cdrom,readonly=on,file="$(wp "$INSTALLER")"
                    -device ide-cd,bus=ide.2,drive=inst) ;;
-    *)     DISKS+=(-drive id=inst,if=none,format=raw,snapshot=on,file="$INSTALLER"
+    *)     DISKS+=(-drive id=inst,if=none,format=raw,snapshot=on,file="$(wp "$INSTALLER")"
                    -device ide-hd,bus=ide.2,drive=inst) ;;
     esac
 fi
-rm -f "$QMP"
+case "$QMPARG" in unix:*) rm -f "$QMP" ;; esac
 exec "$QEMU" -name snowleopard \
   -M q35,i8042=off -accel "$ACCEL" -m ${MEM:-4096} -smp ${SMP:-4} \
   -global ICH9-LPC.disable_s3=1 -global ICH9-LPC.disable_s4=1 \
   -cpu "$CPU" \
-  -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-  -drive if=pflash,format=raw,file="$W/OVMF_VARS.fd" \
+  -drive if=pflash,format=raw,readonly=on,file="$(wp "$OVMF_CODE")" \
+  -drive if=pflash,format=raw,file="$(wp "$W/OVMF_VARS.fd")" \
   -smbios type=2 -device isa-applesmc,osk="$OSK" \
   "${DISP[@]}" "${DISKS[@]}" \
   -device piix3-usb-uhci,id=uhci -device usb-kbd,bus=uhci.0 -device usb-tablet,bus=uhci.0 \
   ${SND[@]+"${SND[@]}"} ${CLIP[@]+"${CLIP[@]}"} \
   -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:${SSHPORT:-2222}-:22${DNDFWD:-}" -device e1000-82545em,netdev=n0 \
-  -serial "$SERIAL" -monitor none -qmp unix:"$QMP",server=on,wait=off \
+  -serial "$SERIAL" -monitor none -qmp "$QMPARG",server=on,wait=off \
   -display "${QDISPLAY:-none}" -vnc "$VNC" \
-  -D "$W/qemu.log" -d ${QDEBUG:-guest_errors,unimp} \
+  -D "$(wp "$W/qemu.log")" -d ${QDEBUG:-guest_errors,unimp} \
   ${EXTRA:-}

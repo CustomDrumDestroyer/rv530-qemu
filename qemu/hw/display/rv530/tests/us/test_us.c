@@ -1204,15 +1204,23 @@ static bool validate_glsl(const char *glsl, const char *name)
     if (!g_glslang || !*g_glslang) {
         return true;
     }
-    snprintf(path, sizeof(path), "/tmp/r500_us_test_%d_%s.frag", (int)getpid(), name);
+    /* Windows (MSYS2): the native test has no /tmp and cmd.exe has no
+     * /dev/null */
+    snprintf(path, sizeof(path), "%s/r500_us_test_%d_%s.frag",
+             getenv("TEMP") ? getenv("TEMP") : "/tmp", (int)getpid(), name);
     f = fopen(path, "w");
     if (!f) {
         return false;
     }
     fputs(glsl, f);
     fclose(f);
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "%s -V --target-env vulkan1.3 -S frag -o NUL %s > %s.log 2>&1",
+             g_glslang, path, path);
+#else
     snprintf(cmd, sizeof(cmd), "%s -V --target-env vulkan1.3 -S frag -o /dev/null %s > %s.log 2>&1",
              g_glslang, path, path);
+#endif
     rc = system(cmd);
     if (rc != 0) {
         char line[512];

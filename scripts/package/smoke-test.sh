@@ -39,14 +39,47 @@ if [ "$(uname -s)" = Linux ]; then
     grep -qx gtk "$LOG" || { echo "smoke test: no GTK display" >&2; exit 1; }
 fi
 
+ROM=$PKG/build-rom/rv530-atombios.rom
+# Windows (MSYS2): a native program needs a Windows path inside an option
+command -v cygpath >/dev/null && ROM=$(cygpath -m "$ROM")
 QMP=$(mktemp); export QMP
 printf '%s\n' '{"execute":"qmp_capabilities"}' \
     '{"execute":"qom-get","arguments":{"path":"/machine/peripheral/gpu","property":"vram_size_mb"}}' \
     '{"execute":"quit"}' >"$QMP"
-limited sh -c 'exec "$0" "$@" <"$QMP"' "$PKG/bin/qemu-system-x86_64" -M q35 -nodefaults -accel tcg -m 512 -S -display none \
+set -- "$PKG/bin/qemu-system-x86_64" -M q35 -nodefaults -accel tcg -m 512 -S -display none \
     -device pci-bridge,id=rp1,bus=pcie.0,addr=0x1,chassis_nr=1,shpc=off \
-    -device rv530,id=gpu,bus=rp1,romfile="$PKG/build-rom/rv530-atombios.rom" \
-    -qmp stdio
+    -device rv530,id=gpu,bus=rp1,romfile="$ROM"
+if command -v cygpath >/dev/null; then
+    # Windows: QEMU's stdio chardev loses input from a file, so send the
+    # commands over a TCP socket
+    PY=$(mktemp)
+    cat >"$PY" <<'PY'
+import socket, subprocess, sys, time
+p = subprocess.Popen(sys.argv[2:])
+for _ in range(100):
+    try:
+        s = socket.create_connection(("127.0.0.1", 44556))
+        break
+    except OSError:
+        time.sleep(0.2)
+s.sendall(open(sys.argv[1], "rb").read())
+data = b""
+while True:
+    try:
+        chunk = s.recv(4096)
+    except ConnectionResetError:    # Windows, after QEMU quits
+        break
+    if not chunk:
+        break
+    data += chunk
+print(data.decode())
+sys.exit(p.wait())
+PY
+    limited python3 "$PY" "$QMP" "$@" -qmp tcp:127.0.0.1:44556,server=on,wait=on
+    rm -f "$PY"
+else
+    limited sh -c 'exec "$0" "$@" <"$QMP"' "$@" -qmp stdio
+fi
 grep -q '"return": 256' "$LOG" || { echo "smoke test: the rv530 did not realize" >&2; exit 1; }
 rm -f "$LOG" "$QMP"
 echo "smoke test passed"

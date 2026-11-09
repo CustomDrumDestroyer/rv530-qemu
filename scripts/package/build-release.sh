@@ -1,7 +1,7 @@
 #!/bin/bash
 # build-release.sh NAME OUTDIR: build QEMU with the rv530 and pack a release
-# package, OUTDIR/NAME.tar.gz, that runs without the build's toolchain or
-# package manager.
+# package, OUTDIR/NAME.tar.gz (OUTDIR/NAME.zip on Windows), that runs without
+# the build's toolchain or package manager.
 #
 #   NAME/bin/qemu-system-x86_64, bin/qemu-img   QEMU (on macOS the emulator
 #                                                is libexec/, bin/ a wrapper
@@ -19,6 +19,10 @@
 #   NAME/...                                     the repository's files
 #                                                (scripts, snowleopard/,
 #                                                docs, device sources)
+#
+# Windows (MSYS2 UCRT64): bin/ holds the emulator, qemu-img, QEMU's data
+# files (share/, next to the programs, as QEMU's Windows install puts them),
+# and the DLLs they need.  share/ and lib/ at the top hold GTK's runtime data.
 #
 # snowleopard/sl-vm.sh finds the emulator and the firmware in that layout.
 # Environment: OVMF_DIR (OVMF_CODE.fd and OVMF_VARS.fd to include),
@@ -40,8 +44,12 @@ PKG=$OUT/$NAME
 # on Ubuntu, .so.62 on Debian and Fedora), and libgcrypt (QEMU has built-in
 # crypto).  Audio and GTK are modules, loaded when used, so that a host without
 # PulseAudio's or ALSA's library only loses that audio driver.
+case "$(uname -s)" in MINGW*|MSYS*) WINDOWS=1 ;; *) WINDOWS= ;; esac
 if [ "$(uname -s)" = Darwin ]; then
     CONFIGURE_EXTRA="--disable-sdl ${CONFIGURE_EXTRA:-}"
+elif [ -n "$WINDOWS" ]; then
+    # QEMU has no modules on Windows
+    CONFIGURE_EXTRA="--disable-opengl --disable-vnc-jpeg --disable-gcrypt ${CONFIGURE_EXTRA:-}"
 else
     CONFIGURE_EXTRA="--enable-modules --libdir=lib --disable-opengl --disable-vnc-jpeg --disable-gcrypt ${CONFIGURE_EXTRA:-}"
 fi
@@ -54,8 +62,16 @@ grep -q "r5xx_vk.c" "$B/build.ninja" || { echo "no Vulkan backend in this build"
 rm -rf "$PKG" "$OUT/stage"
 DESTDIR=$OUT/stage ninja -C "$B" install >/dev/null
 mkdir -p "$PKG/bin" "$PKG/share"
-cp "$OUT/stage$PREFIX/bin/qemu-system-x86_64" "$OUT/stage$PREFIX/bin/qemu-img" "$PKG/bin/"
-cp -R "$OUT/stage$PREFIX/share/qemu" "$PKG/share/"
+if [ -n "$WINDOWS" ]; then
+    # the install's root holds the programs (bindir .) and share/; DESTDIR
+    # drops the drive letter of the prefix
+    ROOT=$(dirname "$(find "$OUT/stage" -name qemu-system-x86_64.exe | head -1)")
+    cp "$ROOT/qemu-system-x86_64.exe" "$ROOT/qemu-img.exe" "$PKG/bin/"
+    cp -R "$ROOT/share" "$PKG/bin/"
+else
+    cp "$OUT/stage$PREFIX/bin/qemu-system-x86_64" "$OUT/stage$PREFIX/bin/qemu-img" "$PKG/bin/"
+    cp -R "$OUT/stage$PREFIX/share/qemu" "$PKG/share/"
+fi
 if [ -d "$OUT/stage$PREFIX/lib/qemu" ]; then
     mkdir -p "$PKG/lib"
     cp -R "$OUT/stage$PREFIX/lib/qemu" "$PKG/lib/"
@@ -127,6 +143,9 @@ EOF
     codesign -d --entitlements - "$PKG/libexec/qemu-system-x86_64" 2>/dev/null |
         grep -q com.apple.security.hypervisor || { echo "entitlement missing" >&2; exit 1; }
     ;;
+MINGW*|MSYS*)
+    python3 "$HERE/scripts/package/bundle-libs.py" "$PKG" bin/qemu-system-x86_64.exe bin/qemu-img.exe
+    ;;
 *)
     python3 "$HERE/scripts/package/bundle-libs.py" "$PKG" bin/qemu-system-x86_64 bin/qemu-img \
         $(cd "$PKG" && ls lib/qemu/*.so)
@@ -137,5 +156,11 @@ python3 "$HERE/scripts/package/notices.py" "$PKG"
 # smoke test: the packaged emulator starts and realizes the device, paused
 env -u LD_LIBRARY_PATH "$HERE/scripts/package/smoke-test.sh" "$PKG"
 
-tar -C "$OUT" -czf "$OUT/$NAME.tar.gz" "$NAME"
-echo "package: $OUT/$NAME.tar.gz"
+if [ -n "$WINDOWS" ]; then
+    (cd "$OUT" && rm -f "$NAME.zip" && python3 -m zipfile -c "$NAME.zip" "$NAME")
+    ARCHIVE=$OUT/$NAME.zip
+else
+    tar -C "$OUT" -czf "$OUT/$NAME.tar.gz" "$NAME"
+    ARCHIVE=$OUT/$NAME.tar.gz
+fi
+echo "package: $ARCHIVE"

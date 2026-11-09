@@ -37,6 +37,7 @@ The repository also has the other parts that a Snow Leopard VM needs:
 | x86_64 Linux | KVM | Vulkan on the host GPU | Reference host: fastest and most stable |
 | Intel Mac | Hypervisor.framework | Vulkan on MoltenVK | Newer, less tested |
 | Apple silicon Mac | TCG (emulated CPU, several times slower) | Vulkan on MoltenVK | Least stable |
+| x86_64 Windows 10 or 11 | TCG (emulated CPU, several times slower) | Vulkan on the host GPU, or the CPU path | Experimental ([Windows hosts](#windows-hosts)) |
 
 ## What works
 
@@ -136,13 +137,14 @@ GitHub Actions builds the packages for each [release](../../releases)
 | `rv530-qemu-*-linux-x86_64.tar.gz` | x86_64 Linux with glibc 2.35 or later (Ubuntu 22.04, Debian 12, Fedora, Arch, and similar), with GTK 3 and a Vulkan driver |
 | `rv530-qemu-*-macos-arm64.tar.gz` | Apple silicon Macs |
 | `rv530-qemu-*-macos-x86_64.tar.gz` | Intel Macs |
+| `rv530-qemu-*-windows-x86_64.zip` | x86_64 Windows 10 and 11 (experimental). The scripts need MSYS2 ([Windows hosts](#windows-hosts)) |
 
 A package contains these items:
 
 - QEMU with the device in `bin/`, and the libraries that QEMU needs in `lib/`.
-  On macOS, `lib/` also contains MoltenVK.
+  On macOS, `lib/` also contains MoltenVK. On Windows, the DLLs are in `bin/`.
 - OVMF with the firmware driver of the card, in `firmware/`.
-- The option ROM, in `build-rom/`.
+- The option ROMs, in `build-rom/`.
 - The scripts and documentation of this repository.
 
 `snowleopard/sl-vm.sh` finds these items in the package. Thus you do not need
@@ -160,8 +162,8 @@ workflow). A manual run builds the packages only as artifacts.
 
 ## Building
 
-Hosts: Linux x86_64 with KVM (the reference host), or a Mac. For a Mac, see
-"macOS hosts" below.
+Hosts: Linux x86_64 with KVM (the reference host), a Mac, or Windows. For a
+Mac or Windows, see "macOS hosts" or "Windows hosts" below.
 
 On Linux, you need these items:
 
@@ -264,6 +266,47 @@ Tests:
 - The Intel test ran the 3D engine on the CPU path, because the Metal device
   of that virtual machine cannot run MoltenVK. We did not test the Vulkan
   backend on the GPU of an Intel Mac.
+
+### Windows hosts
+
+Windows support is experimental. QEMU and the scripts run in the UCRT64
+environment of [MSYS2](https://www.msys2.org/). The guest runs under
+multi-threaded TCG, with the same settings as on Apple silicon.
+
+Install MSYS2. Then, in the "MSYS2 UCRT64" shell:
+
+```
+pacman -S --needed git make diffutils patch tar xz curl dosfstools \
+    mingw-w64-ucrt-x86_64-{toolchain,meson,ninja,python,pkgconf,glib2,pixman,gtk3,SDL2} \
+    mingw-w64-ucrt-x86_64-{libslirp,libpng,vulkan-loader,vulkan-headers,shaderc,glslang,mtools}
+scripts/setup-qemu.sh
+```
+
+With a release package, you need only `python`, `dosfstools`, and `mtools`
+from this list. Then follow [snowleopard/README.md](snowleopard/README.md),
+with these changes:
+
+- Use `QDISPLAY=gtk` or `QDISPLAY=sdl` to get a window.
+- QMP uses TCP: `sl-vm.sh` listens on `127.0.0.1:4444`, and `slctl.py` takes
+  `QMP=127.0.0.1:4444`. Python on Windows cannot use Unix sockets.
+- `AUDIO=usb` uses DirectSound.
+- `CLIPBOARD` and `DND` do not work yet.
+- `SYSDISK` can be a disk image or a physical disk, for example
+  `SYSDISK='\\.\PhysicalDrive1' SYSDISK_FORMAT=raw`. A physical disk needs
+  an administrator shell.
+
+Tests:
+
+- We tested in a Windows 10 LTSC 2021 virtual machine (KVM, 4 vCPUs, 4 GB),
+  with Mac OS X 10.6.8 under TCG inside it.
+- With the CPU path (`RVOPTS=vulkan=off`), the desktop has Quartz Extreme, and
+  `gltest` and `gltex` give the correct results.
+- That virtual machine has no GPU. With the Mesa software Vulkan driver
+  (lavapipe), the Vulkan tests (`tests/vk`) pass, and the desktop draws
+  correctly. But GL programs in the guest read back only black. We did not
+  test the Vulkan backend on a real GPU under Windows.
+- Windows Hypervisor Platform (`ACCEL=whpx`) did not start in that virtual
+  machine (nested Hyper-V under KVM). We did not test it on a real computer.
 
 ## The option ROM
 

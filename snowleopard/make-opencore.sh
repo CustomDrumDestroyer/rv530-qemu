@@ -38,7 +38,15 @@ fi
 OUT=${2:-$HERE/work/esp}
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-unzip -q "$ZIP" -d "$TMP"
+# only the parts that this script uses: on Windows, other parts of the zip
+# have names that differ only in case, which NTFS cannot hold together
+python3 - "$ZIP" "$TMP" <<'EOF'
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+for n in z.namelist():
+    if n.startswith(('X64/', 'Docs/', 'Utilities/ocvalidate/')):
+        z.extract(n, sys.argv[2])
+EOF
 rm -rf "$OUT"
 mkdir -p "$OUT/EFI/BOOT" "$OUT/EFI/OC/Drivers" "$OUT/EFI/OC/Kexts" "$OUT/EFI/OC/ACPI" \
          "$OUT/EFI/OC/Tools" "$OUT/EFI/OC/Resources"
@@ -213,6 +221,7 @@ print('wrote', sys.argv[2])
 EOF
 case "$(uname -s)" in
 Darwin) OCV=$TMP/Utilities/ocvalidate/ocvalidate ;;
+MINGW*|MSYS*|CYGWIN*) OCV=$TMP/Utilities/ocvalidate/ocvalidate.exe ;;
 *)      OCV=$TMP/Utilities/ocvalidate/ocvalidate.linux ;;
 esac
 if [ -f "$OCV" ]; then

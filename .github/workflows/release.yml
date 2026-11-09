@@ -1,5 +1,5 @@
 # Pre-built packages: QEMU with the rv530 for x86_64 Linux, Apple silicon
-# macOS and Intel macOS, with OVMF, the option ROM and the scripts
+# macOS, Intel macOS and x86_64 Windows, with OVMF, the option ROMs and the scripts
 # (scripts/package/build-release.sh).  A pushed tag v* makes a GitHub release
 # with the packages, the QEMU source they were built from and checksums; a
 # manual run (Actions > Release > Run workflow) only uploads them as
@@ -154,6 +154,61 @@ jobs:
           path: dist/${{ env.PKG_NAME }}.tar.gz
           if-no-files-found: error
 
+  windows:
+    name: windows-x86_64
+    needs: firmware
+    runs-on: windows-2022
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # the bash scripts must keep LF line endings
+      - name: Line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils patch tar xz curl dosfstools
+            mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-libslirp mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-vulkan-loader mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-shaderc mingw-w64-ucrt-x86_64-glslang mingw-w64-ucrt-x86_64-mtools
+      - name: Package name
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v=$GITHUB_REF_NAME; else v=dev-${GITHUB_SHA::7}; fi
+          echo "PKG_NAME=rv530-qemu-$v-windows-x86_64" >> "$GITHUB_ENV"
+      - name: Unit tests
+        run: |
+          for t in pvs raster tex us; do
+            make -C qemu/hw/display/rv530/tests/$t CC=gcc check
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: ovmf
+          path: ovmf
+      - name: Build the package
+        run: OVMF_DIR=$PWD/ovmf scripts/package/build-release.sh "$PKG_NAME" dist
+      - name: Nothing loads from MSYS2
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          & "dist\$env:PKG_NAME\bin\qemu-system-x86_64.exe" -version
+          if ($LASTEXITCODE) { exit 1 }
+          & "dist\$env:PKG_NAME\bin\qemu-img.exe" --version
+          if ($LASTEXITCODE) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PKG_NAME }}
+          path: dist/${{ env.PKG_NAME }}.zip
+          if-no-files-found: error
+
   linux-distributions:
     name: Linux package on ${{ matrix.image }}
     needs: build
@@ -189,7 +244,7 @@ jobs:
   release:
     name: GitHub release
     if: github.ref_type == 'tag'
-    needs: [build, linux-distributions]
+    needs: [build, linux-distributions, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

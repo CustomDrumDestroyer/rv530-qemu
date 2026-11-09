@@ -4,7 +4,8 @@
 Lists QEMU, the firmware and every library bundle-libs.py put in PKG/lib
 (from PKG/lib/bundled.txt, which it removes): the package it came from, its
 version and license, as the build machine's package manager reports them
-(dpkg on Linux, Homebrew or MacPorts on macOS), and copies the license and
+(dpkg on Linux, Homebrew or MacPorts on macOS, pacman on Windows with
+MSYS2), and copies the license and
 copyright files that package ships into PKG/licenses/.
 """
 import glob
@@ -66,6 +67,19 @@ def macports(path):
                 source=f'MacPorts port {port} ({field("homepage")})', files=files)
 
 
+def msys2(path):
+    owner = out('pacman', '-Qqo', out('cygpath', '-u', path))
+    if not owner:
+        return None
+    info = out('pacman', '-Qi', owner)
+    field = lambda k: (re.search(rf'^{k}\s*: (.+)$', info, re.M) or [None, ''])[1].strip()
+    base = re.sub(r'^mingw-w64-ucrt-x86_64-', '', owner)
+    lic = out('cygpath', '-m', f'/ucrt64/share/licenses/{base}')
+    files = [f for f in glob.glob(f'{lic}/*') if os.path.isfile(f)]
+    return dict(package=owner, version=field('Version'), license=field('Licenses') or 'see licenses/',
+                source=f'MSYS2 package {owner} ({field("URL")})', files=files)
+
+
 def main():
     pkg = sys.argv[1]
     listing = os.path.join(pkg, 'lib', 'bundled.txt')
@@ -76,7 +90,12 @@ def main():
     lic_dir = os.path.join(pkg, 'licenses')
     rows, by_pkg = [], {}
     for name, src in libs:
-        info = dpkg(src) if sys.platform != 'darwin' else (homebrew(src) or macports(src))
+        if sys.platform == 'darwin':
+            info = homebrew(src) or macports(src)
+        elif sys.platform == 'win32':
+            info = msys2(src)
+        else:
+            info = dpkg(src)
         if not info:
             info = dict(package='?', version='', license='unknown', source=src, files=[])
         rows.append((name, info))
@@ -95,7 +114,7 @@ def main():
             f.write('- **OVMF** (`firmware/`), built from edk2 tag edk2-stable202608 '
                     '(https://github.com/tianocore/edk2) with `snowleopard/Rv530GopDxe/` by '
                     '`snowleopard/build-ovmf.sh`: BSD-2-Clause-Patent.\n')
-        f.write('\nBundled libraries (`lib/`), dynamically linked and replaceable; their '
+        f.write('\nBundled libraries (`lib/`, or `bin/` on Windows), dynamically linked and replaceable; their '
                 'license and copyright files, where the package manager ships them, are in '
                 '`licenses/`:\n\n| Library | From | Version | License | Source |\n'
                 '| --- | --- | --- | --- | --- |\n')

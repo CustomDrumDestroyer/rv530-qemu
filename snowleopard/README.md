@@ -36,7 +36,7 @@ items:
 | `make-installer.py` | Makes the disk that `sl-vm.sh` attaches with `INSTALL=1`, from an install DVD image. The image can be a `.dmg` (it uses `hdiutil` on macOS or `dmg2img` on Linux) or a raw image. If the image is a bare HFS+ volume, the script puts it in a GPT disk, because XNU mounts its root only from a partition |
 | `kexts/QemuTabletFix.kext` | A kext without code. It makes the HID driver of 10.6 use the full range of the usb-tablet. Thus the guest pointer follows the host pointer |
 | `agent/` | `RV530Agent`, an optional helper in the guest. It does drag and drop between host and guest, text clipboard sync, and a change to the new resolution when you resize the window. `agent/install.sh` builds it with the gcc of Xcode 3.2 and installs it as a LaunchAgent. If the guest does not have Xcode, `agent/build-host.sh` builds it on a macOS host. It uses clang for 10.6, and `unixthread.py` replaces the `LC_MAIN` that the current ld writes with the `LC_UNIXTHREAD` that the dyld of 10.6 needs. Then `install.sh` installs that binary |
-| `slctl.py` | Controls a running VM through QMP: screenshots, keys, typing, clicks, HMP commands, and quit |
+| `slctl.py` | Controls a running VM through QMP: screenshots, keys, typing, clicks, HMP commands, and quit. `QMP` is a socket path or, on Windows, `HOST:PORT` |
 | `sl-ssh.sh` | Opens ssh to the guest with the old algorithms that its OpenSSH 5.2 needs (`SSHPORT`, `SL_USER`, `SL_KEY`) |
 | `tests/` | OpenGL and Core Image checks in the guest (`tests/README.md`) |
 | `work/` | Git ignores this directory. It contains the system disk, the boot volume, the OVMF builds, and logs (`serial.log`, `qemu.log`, `vm.out`). Keep your SMC key here too, for example in `work/osk.env`. Never put it in a tracked file |
@@ -50,7 +50,7 @@ The host side of drag and drop and clipboard sync is in `../scripts/dnd/`.
 
 ```
 scripts/setup-qemu.sh                   # QEMU with the rv530, and the option ROM
-sudo apt install git uuid-dev nasm acpica-tools dosfstools mtools unzip ovmf   # for the next two
+sudo apt install git uuid-dev nasm acpica-tools dosfstools mtools ovmf   # for the next two
 snowleopard/build-ovmf.sh               # -> snowleopard/work/fw/OVMF_CODE.fd
 SL_PICKER=1 snowleopard/make-opencore.sh   # with the boot picker, for installing
 ```
@@ -61,7 +61,7 @@ available, the script builds them.
 A pre-built package from the releases of the repository already contains
 QEMU, OVMF, and the option ROM (see "Pre-built packages" in the top-level
 `README.md`). With a package, run only `make-opencore.sh` from the unpacked
-package. It needs python3, unzip, curl, dosfstools, and mtools. On a Mac, use
+package. It needs python3, curl, dosfstools, and mtools. On a Mac, use
 dosfstools and mtools from Homebrew or MacPorts.
 
 ### 2. Install Mac OS X

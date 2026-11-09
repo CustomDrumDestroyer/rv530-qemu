@@ -253,7 +253,11 @@ static void validate_glsl(const char *name, const R5xxPvsDecoded *d)
         return;
     }
     CHECK(strncmp(glsl, "#version 450", 12) == 0, "%s: missing #version", name);
+#ifdef _WIN32
+    mkdir(g_build_dir);
+#else
     mkdir(g_build_dir, 0777);
+#endif
     snprintf(path, sizeof(path), "%s/%s.vert", g_build_dir, name);
     f = fopen(path, "w");
     CHECK(f != NULL, "cannot write %s", path);

@@ -25,7 +25,19 @@ if [ ! -f qemu-11.1.3.tar.xz ]; then
     curl -fLO https://download.qemu.org/qemu-11.1.3.tar.xz
 fi
 if [ ! -d qemu-11.1.3 ]; then
-    tar -xJf qemu-11.1.3.tar.xz
+    case "$(uname -s)" in
+    MINGW*|MSYS*)
+        # MSYS2's tar cannot make a symlink to a file that it has not
+        # extracted yet. These links are in firmware and CI trees that the
+        # build does not use, so ignore only that error.
+        tar -xJf qemu-11.1.3.tar.xz 2> tar.err || true
+        if grep -v -q "Cannot create symlink\|Exiting with failure status" tar.err; then
+            cat tar.err >&2; exit 1
+        fi
+        rm -f tar.err ;;
+    *)
+        tar -xJf qemu-11.1.3.tar.xz ;;
+    esac
 fi
 cd qemu-11.1.3
 rm -rf hw/display/rv530

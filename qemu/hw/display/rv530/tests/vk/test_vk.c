@@ -1088,17 +1088,32 @@ static void bench_kernel(const char *path, int n)
     free(draw);
 }
 
+/* aligned buffers that live until exit (Windows has no posix_memalign) */
+static int alloc_aligned(void **p, size_t align, size_t size)
+{
+#ifdef _WIN32
+    *p = _aligned_malloc(size, align);
+    return *p ? 0 : 1;
+#else
+    return posix_memalign(p, align, size);
+#endif
+}
+
 int main(void)
 {
     char err[256];
 
-    if (posix_memalign((void **)&vram, 1 << 21, VRAM_SIZE) ||
-        posix_memalign((void **)&backup, 64, VRAM_SIZE) ||
-        posix_memalign((void **)&cpu_out, 64, VRAM_SIZE)) {
+    if (alloc_aligned((void **)&vram, 1 << 21, VRAM_SIZE) ||
+        alloc_aligned((void **)&backup, 64, VRAM_SIZE) ||
+        alloc_aligned((void **)&cpu_out, 64, VRAM_SIZE)) {
         return 1;
     }
     memset(vram, 0, VRAM_SIZE);
+#ifdef _WIN32
+    _putenv_s("RV530_VK_SYNC_COMPILE", "1");
+#else
     setenv("RV530_VK_SYNC_COMPILE", "1", 1);
+#endif
     r5xx_flatmem_init(&fm, vram, VRAM_SIZE, 0);
     vk = r5xx_vk_create(vram, VRAM_SIZE, NULL, NULL, err, sizeof(err));
     if (!vk) {

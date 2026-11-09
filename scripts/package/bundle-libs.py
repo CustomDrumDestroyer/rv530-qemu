@@ -14,6 +14,10 @@ EXCLUDE below).  RUNPATH
 becomes $ORIGIN/../lib for the binaries and $ORIGIN for the libraries
 (patchelf).
 
+Windows (MSYS2): every DLL outside the Windows directory goes into bin/,
+next to the programs, where the Windows loader looks first; GTK's runtime
+data (GSettings schemas, gdk-pixbuf loaders) goes into share/ and lib/.
+
 macOS: every dependency outside /usr/lib and /System goes into lib/, with
 @executable_path/../lib/NAME in the binaries and @loader_path/NAME in the
 libraries (install_name_tool); rpaths that point at the build's package
@@ -196,6 +200,42 @@ def bundle_macos(root, bins, extra_libs=()):
     return copied
 
 
+# --------------------------------------------------------------- Windows
+
+def winpath(msys_path):
+    return run('cygpath', '-m', msys_path).strip()
+
+
+def bundle_windows(root, bins):
+    bindir = os.path.join(root, 'bin')
+    copied = {}
+    for b in bins:
+        for name, path in ldd_deps(os.path.join(root, b)).items():
+            if path.lower().startswith('/c/windows/'):
+                continue
+            src = winpath(path)
+            dst = os.path.join(bindir, os.path.basename(src))
+            if not os.path.exists(dst):
+                shutil.copy2(src, dst)
+            copied[os.path.basename(src)] = src
+    # GTK finds its data from the folder above its DLL (bin/..)
+    prefix = winpath('/ucrt64')
+    schemas = os.path.join('share', 'glib-2.0', 'schemas')
+    os.makedirs(os.path.join(root, schemas), exist_ok=True)
+    shutil.copy2(os.path.join(prefix, schemas, 'gschemas.compiled'), os.path.join(root, schemas))
+    pixbuf = os.path.join('lib', 'gdk-pixbuf-2.0')
+    if os.path.isdir(os.path.join(prefix, pixbuf)):
+        shutil.copytree(os.path.join(prefix, pixbuf), os.path.join(root, pixbuf), dirs_exist_ok=True)
+    # what is still not in bin/ or the Windows directory comes from MSYS2
+    for b in bins:
+        for name, path in ldd_deps(os.path.join(root, b)).items():
+            p = os.path.normcase(winpath(path))
+            if not (path.lower().startswith('/c/windows/') or
+                    p.startswith(os.path.normcase(os.path.abspath(bindir)))):
+                sys.exit(f'{b}: {name} still comes from {path}')
+    return copied
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
@@ -203,8 +243,11 @@ def main():
     extra = os.environ.get('BUNDLE_EXTRA_LIBS', '').split(os.pathsep)
     if sys.platform == 'darwin':
         srcs = bundle_macos(root, bins, [e for e in extra if e])
+    elif sys.platform == 'win32':
+        srcs = bundle_windows(root, bins)
     else:
         srcs = bundle_linux(root, bins)
+    os.makedirs(os.path.join(root, 'lib'), exist_ok=True)
     # where each library came from, for notices.py
     with open(os.path.join(root, 'lib', 'bundled.txt'), 'w') as f:
         for name, src in sorted(srcs.items()):

@@ -442,7 +442,7 @@ static void *cpu_worker(void *arg)
 static void cpu_pool_init(void)
 {
     const char *e = getenv("RV530_CPU_THREADS");
-    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    long ncpu = g_get_num_processors();
     int n = e ? atoi(e) : (int)MIN(8, ncpu / 2), i;
 
     if (cpool.nthreads || n < 2) {

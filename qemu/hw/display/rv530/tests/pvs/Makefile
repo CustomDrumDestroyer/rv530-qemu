@@ -10,7 +10,9 @@ CC      ?= gcc
 CFLAGS  ?= -std=gnu11 -O2 -g -Wall -Wextra -Wno-unused-parameter
 LDLIBS   = -lm
 TOP      = ../..
-GLSLANG ?= $(shell command -v glslangValidator || echo /usr/bin/glslangValidator)
+# the bare name when it is on PATH: on Windows (MSYS2) the test runs it
+# through cmd.exe, which cannot use an MSYS2 path
+GLSLANG ?= $(if $(shell command -v glslangValidator),glslangValidator,/usr/bin/glslangValidator)
 RC       = $(TOP)/tools/mesa-rc/rc_compile
 
 SRCS = pvs_test.c $(TOP)/r5xx_pvs.c $(TOP)/r5xx_core.c

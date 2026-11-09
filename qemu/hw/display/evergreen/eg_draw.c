@@ -1400,7 +1400,7 @@ static void *raster_worker(void *arg)
 static void raster_pool_init(void)
 {
     const char *e = getenv("EG_RASTER_THREADS");
-    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    long ncpu = g_get_num_processors();
     int i;
 
     if (rpool.n) {

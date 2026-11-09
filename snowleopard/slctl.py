@@ -20,7 +20,7 @@
                                            (system_powerdown, the ACPI button, asks
                                            10.6 to sleep, which this VM cannot)
   slctl.py quit                            stop QEMU (no guest shutdown)
-Socket: $QMP or snowleopard/work/qmp.sock.
+Socket: $QMP (a path, or HOST:PORT for TCP) or snowleopard/work/qmp.sock.
 """
 import json, os, socket, sys, time
 
@@ -28,10 +28,20 @@ SOCK = os.environ.get("QMP", os.path.join(os.path.dirname(os.path.abspath(__file
                                           "work", "qmp.sock"))
 
 
-def qmp(*cmds):
+def qmp_connect():
+    """QMP is a Unix socket path, or HOST:PORT (TCP, as sl-vm.sh uses on
+    Windows hosts, where Python has no AF_UNIX)."""
+    host, sep, port = SOCK.rpartition(":")
+    if sep and port.isdigit() and "/" not in SOCK and "\\" not in SOCK:
+        return socket.create_connection((host or "127.0.0.1", int(port)), timeout=60)
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(60)
     s.connect(SOCK)
+    return s
+
+
+def qmp(*cmds):
+    s = qmp_connect()
     f = s.makefile("rw")
     f.readline()
     out = []

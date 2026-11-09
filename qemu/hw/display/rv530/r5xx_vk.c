@@ -890,7 +890,7 @@ R5xxVk *r5xx_vk_create(void *vram, uint64_t vram_size, R5xxVkDirtyFn dirty,
      * reassociate the exact float arithmetic of depth_to_fixed and drops
      * NaN/Inf semantics the R500 program translation relies on.
      */
-    setenv("MVK_CONFIG_FAST_MATH_ENABLED", "0", 0);
+    g_setenv("MVK_CONFIG_FAST_MATH_ENABLED", "0", false);
 #endif
     {
         uint32_t ne = 0, k;
